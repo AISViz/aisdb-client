@@ -6,6 +6,7 @@ from collections import UserDict
 from datetime import datetime
 from functools import reduce
 import sqlite3
+import warnings
 
 import numpy as np
 import aiosqlite
@@ -172,7 +173,6 @@ class DBQuery(UserDict):
 
     def gen_qry(self,
                 fcn=sqlfcn.crawl_dynamic,
-                printqry=False,
                 force_reaggregate_static=False,
                 verbose=False):
         ''' queries the database using the supplied SQL function and dbpath.
@@ -237,7 +237,7 @@ class DBQuery(UserDict):
                 '''
 
             qry = fcn(dbpath=dbpath, **self.data)
-            if printqry:
+            if verbose:
                 print(qry)
 
             # get 500k rows at a time, yield sets of rows for each unique MMSI
@@ -247,7 +247,7 @@ class DBQuery(UserDict):
             _ = cur.execute(qry)
             res = cur.fetchmany(10**5)
             delta = datetime.now() - dt
-            if printqry:
+            if verbose:
                 print(
                     f'query time: {delta.total_seconds():.2f}s\nfetching rows...'
                 )
@@ -293,7 +293,6 @@ class DBQuery_async(DBQuery):
 
     async def gen_qry(self,
                       fcn=sqlfcn.crawl_dynamic,
-                      printqry=False,
                       force_reaggregate_static=False,
                       verbose=False):
 
@@ -317,22 +316,35 @@ class DBQuery_async(DBQuery):
                         print('Aggregating static messages synchronously... ')
                     aggregate_static_msgs(syncdb, [month], verbose=verbose)
 
-        qry = fcn(dbpath='main', **self)
-        if printqry:
+        # generate SQL query
+        qry = fcn(dbpath='main', **self.copy())
+        if verbose:
             print(qry)
+
+        # execute
         cursor = await self.dbconn.execute(qry)
         mmsi_rows = []
+
+        # process in chunks up to 500k in size
         res = await cursor.fetchmany(10**5)
         while len(res) > 0:
             mmsi_rows += res
-            ummsi_idx = np.where(
+
+            # group rows together until the mmsi changes
+            ummsi_idx_diff = np.where(
                 np.array(mmsi_rows)[:-1, 0] != np.array(mmsi_rows)[1:,
                                                                    0])[0] + 1
-            ummsi_idx = reduce(np.append, ([0], ummsi_idx, [len(mmsi_rows)]))
+            # array indices of mmsi values
+            ummsi_idx = reduce(np.append,
+                               ([0], ummsi_idx_diff, [len(mmsi_rows)]))
+            #assert len(ummsi_idx) > 2
             for i in range(len(ummsi_idx) - 2):
                 yield mmsi_rows[ummsi_idx[i]:ummsi_idx[i + 1]]
-            assert len(ummsi_idx) > 2
-            mmsi_rows = mmsi_rows[ummsi_idx[i + 1]:]
+
+            if not len(ummsi_idx) > 2:
+                warnings.warn(f'got {mmsi_rows[0]["mmsi"]} {ummsi_idx=}')
+            else:
+                mmsi_rows = mmsi_rows[ummsi_idx[i + 1]:]
 
             res = await cursor.fetchmany(10**5)
         yield mmsi_rows

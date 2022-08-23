@@ -4,19 +4,19 @@ import pytest
 
 from aisdb.websocket_server import SocketServ
 from aisdb.tests.create_testing_data import (
-    random_polygons_domain,
-    sample_database_file,
-)
+        random_polygons_domain,
+        sample_database_file,
+        )
 
 dbpath = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'testdata',
-    'test_10_websocket_server.db')
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'testdata',
+        'test_10_websocket_server.db')
 
 domain = random_polygons_domain(10)
 testdir = os.environ.get(
-    'AISDBTESTDIR',
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                 'testdata'))
+        'AISDBTESTDIR',
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'testdata'))
 trafficDBpath = os.path.join(testdir, 'marinetraffic_test.db')
 
 
@@ -32,28 +32,28 @@ class FakeWebSocketClient(list):
     zones = {'type': 'zones'}
 
     track_vectors = {
-        "type": "track_vectors",
-        "start": "2021-07-01",
-        "end": "2021-07-14",
-        "area": {
-            "minX": -180,
-            "maxX": 0,
-            "minY": 0,
-            "maxY": 90,
-        }
-    }
+            "type": "track_vectors",
+            "start": "2021-07-01",
+            "end": "2021-07-14",
+            "area": {
+                "minX": -180,
+                "maxX": 0,
+                "minY": 0,
+                "maxY": 90,
+                }
+            }
 
     heatmap = {
-        "type": "heatmap",
-        "start": "2021-07-01",
-        "end": "2021-07-30",
-        "area": {
-            "minX": -180,
-            "maxX": 180,
-            "minY": -90,
-            "maxY": 90
-        }
-    }
+            "type": "heatmap",
+            "start": "2021-07-01",
+            "end": "2021-07-30",
+            "area": {
+                "minX": -180,
+                "maxX": 180,
+                "minY": -90,
+                "maxY": 90
+                }
+            }
 
     def __init__(self, requests=[validrange, zones, track_vectors, heatmap]):
         super().__init__(map(orjson.dumps, requests))
@@ -74,7 +74,7 @@ class FakeWebSocketClient(list):
         self.values.append(orjson.loads(val))
 
     async def recv(self):
-        ''' recv values from client to server '''
+        ''' recv values from client to server ''commit'
         response = self.responses.pop(0)
         print(f'RESPONDING {response}')
         if len(self.responses) == 0:
@@ -102,3 +102,5 @@ async def test_clientsocket_handler(websocket):
                       enable_ssl=False)
     await serv.handler(websocket)
     await serv.dbconn.close()
+    serv.request_cache.cache_db.dbconn.commit()
+    serv.request_cache.cache_db.dbconn.close()

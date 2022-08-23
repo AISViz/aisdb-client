@@ -5,17 +5,30 @@
 import os
 from hashlib import md5
 import pickle
+import orjson
 import sqlite3
 
 from aisdb.database.dbconn import DBConn
 from aisdb.aisdb import decoder
+from aisdb.track_gen import serialize_tracks, deserialize_tracks
 
 
 class FileChecksums():
 
-    def _checksums_table(self, dbpath):
-        dbconn = sqlite3.connect(dbpath)
-        cur = dbconn.cursor()
+    md5 = md5
+
+    def __init__(self, dbpath):
+        self.dbconn = sqlite3.connect(dbpath)
+        self._checksums_table()
+
+    def _bitshift_hex32_int32(self, hex32):
+        ''' convert 32-char hexadecimal string to 32-bit signed integer '''
+        assert isinstance(hex32, str)
+        assert len(hex32) == 32
+        return (int(hex32, base=16) >> 64) - (2**63)
+
+    def _checksums_table(self):
+        cur = self.dbconn.cursor()
         cur.execute('''
             CREATE TABLE IF NOT EXISTS
             hashmap(
@@ -23,37 +36,56 @@ class FileChecksums():
                 bytes BLOB
             )
             WITHOUT ROWID;''')
-        cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS '
-                    'idx_map on hashmap(hash)')
-        zeros = ''.join(['0' for _ in range(32)])
-        ones = ''.join(['f' for _ in range(32)])
-        minval = (int(zeros, base=16) >> 64) - (2**63)
-        maxval = (int(ones, base=16) >> 64) - (2**63)
-        cur.execute('INSERT OR IGNORE INTO hashmap VALUES (?,?)',
-                    (minval, pickle.dumps(None)))
-        cur.execute('INSERT OR IGNORE INTO hashmap VALUES (?,?)',
-                    (maxval, pickle.dumps(None)))
-        dbconn.close()
+        #cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS ' 'idx_map on hashmap(hash)')
+        #zeros = ''.join(['0' for _ in range(32)])
+        #ones = ''.join(['f' for _ in range(32)])
+        #minval = (int(zeros, base=16) >> 64) - (2**63)
+        #maxval = (int(ones, base=16) >> 64) - (2**63)
+        #cur.execute('INSERT OR IGNORE INTO hashmap VALUES (?,?)', (minval, pickle.dumps(None)))
+        #cur.execute('INSERT OR IGNORE INTO hashmap VALUES (?,?)', (maxval, pickle.dumps(None)))
+        #dbconn.close()
+        self.dbconn.commit()
 
-    def _insert_checksum(self, dbpath, checksum):
-        dbconn = sqlite3.connect(dbpath)
-        cur = dbconn.cursor()
-        cur.execute('INSERT INTO hashmap VALUES (?,?)',
-                    [checksum, pickle.dumps(None)])
-        dbconn.commit()
-        dbconn.close()
+    def _insert_checksum(self, checksum, obj=True):
+        '''
+            args:
+                checksum:
+                    object hash digest i.e. hexadecimal string with length 32
+                obj:
+                    arbitrary binary object or other serializeable data
+        '''
+        if obj is not None and len(obj) > 0:
+            for track in obj:
+                track['dynamic'] = tuple(track['dynamic'])
+                track['static'] = tuple(track['static'])
+        hashint = self._bitshift_hex32_int32(checksum)
+        print(f'INSERT HASH {hashint}')
+        cur = self.dbconn.cursor()
+        cur.execute(
+            'INSERT INTO hashmap VALUES (?,?)',
+            [
+                hashint,
+                orjson.dumps(obj, option=orjson.OPT_SERIALIZE_NUMPY)
+                #serialize_tracks(obj)
+            ])
+        self.dbconn.commit()
+        #dbconn.close()
 
-    def _checksum_exists(self, dbpath, checksum):
-        dbconn = sqlite3.connect(dbpath)
-        cur = dbconn.cursor()
-        cur.execute('SELECT * FROM hashmap WHERE hash == ?', [checksum])
-        res = cur.fetchone()
-        dbconn.commit()
-        dbconn.close()
+    def checksum_exists(self, checksum):
+        '''
+            args:
+                checksum:
+                    object hash - 32-length hex digest
+        '''
+        cur = self.dbconn.cursor()
+        cur.execute('SELECT bytes FROM hashmap WHERE hash == ?',
+                    [self._bitshift_hex32_int32(checksum)])
+        res = cur.fetchall()
+        #dbconn.close()
 
-        if res is None or res is False:
+        if res == []:
             return False
-        return True
+        return orjson.loads(res[0][0])
 
 
 def decode_msgs(filepaths,
@@ -111,8 +143,7 @@ def decode_msgs(filepaths,
     if len(filepaths) == 0:  # pragma: no cover
         raise ValueError('must supply atleast one filepath.')
 
-    dbindex = FileChecksums()
-    dbindex._checksums_table(dbpath)
+    dbindex = FileChecksums(dbpath)
     for file in filepaths:
         if not skip_checksum:
             with open(os.path.abspath(file), 'rb') as f:
@@ -120,13 +151,14 @@ def decode_msgs(filepaths,
                 if file[-4:] == '.csv':  # skip header row (~1.6kb)
                     _ = f.read(600)
                     signature = md5(f.read(1000)).hexdigest()
-            if dbindex._checksum_exists(dbpath, signature):
+            if dbindex.checksum_exists(signature):
                 if verbose:  # pragma: no cover
                     print(f'found matching checksum, skipping {file}')
                 continue
         decoder(dbpath=dbpath, files=[file], source=source, verbose=verbose)
         if not skip_checksum:
-            dbindex._insert_checksum(dbpath, signature)
+            dbindex._insert_checksum(signature)
+    dbindex.dbconn.close()
 
     if vacuum is not False:
         print("finished parsing data\nvacuuming...")

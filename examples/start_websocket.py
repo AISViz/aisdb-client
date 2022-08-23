@@ -28,4 +28,8 @@ serv = SocketServ(
     enable_ssl=False,
 )
 
-asyncio.run(serv.main())
+try:
+    asyncio.run(serv.main())
+finally:
+    asyncio.run(serv.dbconn.close())
+    serv.request_cache.cache_db.dbconn.close()

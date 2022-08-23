@@ -16,6 +16,7 @@ from aisdb import (
     sqlfcn_callbacks,
 )
 from aisdb.database.dbqry import DBQuery_async
+from aisdb.gis import dt_2_epoch
 from aisdb.interp import interp_time_async
 from aisdb.track_gen import (
     TrackGen_async,
@@ -23,6 +24,129 @@ from aisdb.track_gen import (
     split_timedelta_async,
 )
 from aisdb.webdata.marinetraffic import _vessel_info_dict, _nullinfo
+from aisdb.database.decoder import FileChecksums
+
+
+class RequestCache():
+
+    def heatmap(self, qry_rows):
+        return interp_time_async(
+            encode_greatcircledistance_async(
+                split_timedelta_async(TrackGen_async(qry_rows),
+                                      maxdelta=timedelta(hours=2)),
+                distance_threshold=250000,
+                minscore=0,
+                speed_threshold=50,
+            ),
+            step=timedelta(hours=3),
+        )
+
+    def __init__(self, dbpath, *, dx=1, dy=1, dt=timedelta(days=1)):
+
+        assert os.path.isfile(dbpath)
+        cache_path = dbpath + '.cache'
+        self.args = dict(dx=dx, dy=dy, dt=dt)
+        self.dbpath = dbpath
+        self.cache_db = FileChecksums(cache_path)
+        #self.cache_db._checksums_table()
+
+    def spacebins(self, a, b, delta):
+        ''' returns an array of evenly spaced values between a and b with a
+            step size of delta.
+            a modulus is applied to shift start and end values to the nearest
+            integer outside the bounds of (a,b).
+        '''
+        return np.arange(
+            min(a, b) - (min(a, b) % (delta * 1)),
+            max(a, b) - (max(a, b) % (delta * -1)), delta)
+
+    def __aiter__(self):
+        assert self.req
+        req = self.req
+
+        #callback = self.callback
+        self.chunks = []
+        for t in np.arange(
+                datetime(*map(int, req['start'].split('-'))).date(),
+                datetime(*map(int, req['end'].split('-'))).date(),
+                self.args['dt']).astype(datetime):
+            for x in self.spacebins(req['area']['minX'],
+                                    req['area']['maxX'],
+                                    delta=self.args['dx']):
+                for y in self.spacebins(req['area']['minY'],
+                                        req['area']['maxY'],
+                                        delta=self.args['dy']):
+                    qryargs = dict(
+                        type=req['type'],
+                        dbpath=self.dbpath,
+                        xmin=x,
+                        xmax=x + self.args['dx'],
+                        ymin=y,
+                        ymax=y + self.args['dy'],
+                        start=t,
+                        end=t + self.args['dt'],
+                    )
+                    self.chunks.append(qryargs)
+        del self.req
+        return self
+
+    async def __anext__(self):
+        if len(self.chunks) == 0:
+            raise StopAsyncIteration
+
+        qryargs = self.chunks.pop(0)
+        serialized_args = orjson.dumps(qryargs,
+                                       option=orjson.OPT_SORT_KEYS
+                                       | orjson.OPT_SERIALIZE_NUMPY)
+        checksum = self.cache_db.md5(serialized_args).hexdigest()
+        exists = self.cache_db.checksum_exists(checksum)
+        if exists is False:
+            assert 'type' in qryargs.keys(), 'no pipeline defined!'
+            req_type = qryargs.pop('type')
+            if req_type == 'heatmap':
+                qry_fcn = sqlfcn.crawl_dynamic
+            elif req_type == 'track_vectors':
+                qry_fcn = sqlfcn.crawl_dynamic_static
+            else:
+                raise ValueError
+            pipeline = getattr(self, req_type)
+
+            qry = DBQuery_async(
+                fcn=qry_fcn,
+                callback=sqlfcn_callbacks.in_bbox_time_validmmsi,
+                **qryargs)
+
+            trackset = tuple()
+            try:
+                async for track in pipeline(qry.gen_qry(verbose=True)):
+                    trackset += tuple([track])
+            except AssertionError as err:
+                if str(err) == 'rows cannot be empty':
+                    trackset = None
+                else:
+                    raise err
+            except Exception as err:
+                raise err
+            #await qry.dbconn.close()
+            self.cache_db._insert_checksum(checksum, trackset)
+            #for track in trackset:
+            #    yield track
+            assert trackset != tuple()
+            return trackset
+        else:
+            #for track in exists:
+            #    yield track
+            return exists
+        return
+
+    # need to fix dbpath args incompatability for synchronous operation
+    #def __iter__(self):
+    #    return self
+    #
+    #def __next__(self):
+    #    if len(self) == 0:
+    #        raise StopIteration
+    #    return DBQuery(**self.pop(0))
 
 
 class SocketServ():
@@ -38,6 +162,8 @@ class SocketServ():
         self.domain = domain
         assert self.domain.zones != []
         self.vesselinfo = _vessel_info_dict(trafficDBpath)
+
+        self.request_cache = RequestCache(self.dbpath)
 
         # let nginx in docker manage SSL by default
         if enable_ssl:  # pragma: no cover
@@ -114,6 +240,7 @@ class SocketServ():
                         'type': 'done',
                         'status': 'Request timed out!'
                     }))
+        #self.request_cache.cache_db.dbconn.close()
         await websocket.close()
         print(f'closed client: ended socket loop {websocket.remote_address}')
 
@@ -133,8 +260,7 @@ class SocketServ():
 
         if response['type'] == 'zones':
             warnings.warn(
-                f'client creating branching request! {websocket.remote_address}'
-            )
+                f'client branching request! {websocket.remote_address}')
             await self.req_zones(response, websocket)
 
         else:
@@ -145,23 +271,35 @@ class SocketServ():
             orjson.dumps(event, option=orjson.OPT_SERIALIZE_NUMPY))
         response = await self.await_response(websocket)
         if qry is not None and response == 'HALT':
-            await qry.dbconn.close()
+            #await qry.dbconn.close()
+            #self.request_cache.cache_db.dbconn.close()
+            pass
         return response
 
+    '''
     def _create_dbqry(self, req):
         start = datetime(*map(int, req['start'].split('-')))
         end = datetime(*map(int, req['end'].split('-')))
-        qry = DBQuery_async(
-            dbpath=self.dbpath,
-            start=start,
-            end=end,
-            callback=sqlfcn_callbacks.in_bbox_time_validmmsi,
-            xmin=req['area']['minX'],
-            xmax=req['area']['maxX'],
-            ymin=req['area']['minY'],
-            ymax=req['area']['maxY'],
-        )
-        return qry
+        for x in spacebins(req['area']['minX'], req['area']['maxX']):
+            for y in spacebins(req['area']['minY'], req['area']['maxY']):
+                #pass
+                qry = DBQuery_async(
+                    dbpath=self.dbpath,
+                    start=start,
+                    end=end,
+                    callback=sqlfcn_callbacks.in_bbox_time_validmmsi,
+                    #xmin=req['area']['minX'],
+                    #xmax=req['area']['maxX'],
+                    #ymin=req['area']['minY'],
+                    #ymax=req['area']['maxY'],
+                    xmin=x,
+                    xmax=x + dx,
+                    ymin=y,
+                    ymax=y + dy,
+                )
+                #return qry
+                yield qry
+    '''
 
     async def req_valid_range(self, req, websocket):
         ''' send the range of valid database query time ranges to the client.
@@ -231,6 +369,8 @@ class SocketServ():
                         }
                 }
         '''
+        pass
+        return
         qry = self._create_dbqry(req)
         trackgen = encode_greatcircledistance_async(
             TrackGen_async(qry.gen_qry(fcn=sqlfcn.crawl_dynamic_static)),
@@ -290,25 +430,49 @@ class SocketServ():
                 }
 
         '''
-        qry = self._create_dbqry(req)
+        #qry = self._create_dbqry(req)
+        """
         interps = interp_time_async(
             encode_greatcircledistance_async(
-                split_timedelta_async(TrackGen_async(qry.gen_qry()),
-                                      maxdelta=timedelta(hours=2)),
+                split_timedelta_async(
+                    TrackGen_async(
+                        #qry.gen_qry()
+                        qry_rows),
+                    maxdelta=timedelta(hours=2)),
                 distance_threshold=250000,
                 minscore=0,
                 speed_threshold=50,
             ),
             step=timedelta(hours=3),
         )
+        """
         count = 0
-        async for itr in interps:
+        self.request_cache.req = req
+        self.request_cache.req['type'] = 'heatmap'
+        self.request_cache.callback = sqlfcn.crawl_dynamic_static
+        async for itr in self.request_cache:
+            if itr is None or itr == ():
+                print('SKIP!')
+                continue
+
+            xy = []
+            for track in itr:
+                xy += zip(track['lon'], track['lat'])
+
             response = {
                 'type': 'heatmap',
-                'xy': np.array(list(zip(itr['lon'], itr['lat'])))
+                #'xy': np.array(list(zip(itr['lon'], itr['lat'])))
+                'xy': xy,
             }
-            if await self._send_and_await(response, websocket, qry) == 'HALT':
-                await interps.aclose()
+
+            await websocket.send(
+                orjson.dumps(response, option=orjson.OPT_SERIALIZE_NUMPY))
+            response = await self.await_response(websocket)
+            #if await self._send_and_await(response, websocket, qry) == 'HALT':
+            #    await interps.aclose()
+            #    return
+            if response == 'HALT':
+                #await interps.aclose()
                 return
             count += 1
 
@@ -340,4 +504,5 @@ if __name__ == '__main__':
     try:
         asyncio.run(serv.main())
     finally:
+        serv.request_cache.cache_db.dbconn.close()
         asyncio.run(serv.dbconn.close())
