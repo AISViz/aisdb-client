@@ -1,7 +1,5 @@
 // https://bluejekyll.github.io/blog/posts/multicasting-in-rust/
 
-//#[macro_use]
-//extern crate lazy_static;
 extern crate socket2;
 
 use std::io;
@@ -10,21 +8,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread::JoinHandle;
 
-//use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use socket2::SockAddr;
 
 #[path = "../socket.rs"]
 pub mod socket;
 use socket::{bind_multicast, new_socket};
-
-/*
-lazy_static! {
-pub static ref IPV4: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
-pub static ref IPV6: IpAddr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
-}
-*/
-//pub static IPV4: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 110).into();
-//pub static IPV6: Ipv6Addr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
 
 /// server socket listener
 pub fn multicast_listener(
@@ -145,14 +133,6 @@ fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
     };
 
     // bind us to the socket address.
-    //socket.bind(&addr)?;
-    //Ok(socket.into_udp_socket())
-    //match socket.bind(&SockAddr::from(addr)) {
-    //match socket.bind(&SockAddr::from(addr)) {
-    //    Err(e) => panic!("{}", e),
-    //    Ok(_) => {}
-    //}
-    //?;
     bind_multicast(&socket, &addr)?;
     Ok(socket.into())
 }
@@ -183,54 +163,3 @@ pub fn main() {
     let response = "0";
     multicast_listener(response, client_done, socketaddr);
 }
-
-#[cfg(test)]
-pub const PORT: u16 = 9923;
-
-#[cfg(test)]
-/// Our generic test over different IPs
-fn test_multicast(test: &'static str, addr: IpAddr) {
-    //#[path = "client.rs"]
-    //pub mod client;
-
-    assert!(addr.is_multicast());
-    let addr = SocketAddr::new(addr, PORT);
-
-    let client_done = Arc::new(AtomicBool::new(false));
-    let _notify = NotifyServer(Arc::clone(&client_done));
-
-    // start server
-    multicast_listener(test, client_done, addr);
-
-    // client test code send and receive code after here
-    println!("{}:client: running", test);
-
-    let message = b"Hello from client!";
-
-    use socket::{new_sender, new_sender_ipv6};
-    if addr.is_ipv4() {
-        let socket = new_sender(&addr).expect("could not create ipv4 sender!");
-        socket
-            .send_to(message, &addr)
-            .expect("could not send to socket!");
-    } else {
-        let socket = new_sender_ipv6(&addr).expect("could not create ipv6 sender!");
-        socket
-            .send_to(message, &addr)
-            .expect("could not send to socket!");
-    }
-}
-
-#[test]
-fn test_ipv4_multicast() {
-    let ipv4: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
-    test_multicast("ipv4", ipv4);
-}
-
-/*
-#[test]
-fn test_ipv6_multicast() {
-    let ipv6: IpAddr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
-    test_multicast("ipv6", ipv6);
-}
-*/
