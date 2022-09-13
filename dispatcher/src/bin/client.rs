@@ -110,7 +110,7 @@ pub fn client_socket_stream(
         //buf = [0u8; 64].to_vec();
 
         //#[cfg(debug_assertions)]
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        //std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 
