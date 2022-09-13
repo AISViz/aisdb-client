@@ -43,9 +43,18 @@ pub fn multicast_listener(
                 .expect(format!("failed to create listener on address {}", addr).as_str());
             #[cfg(debug_assertions)]
             println!("{}:server: joined: {}", response, addr);
-            server_barrier.wait();
+
+            //server_barrier.wait();
+
             #[cfg(debug_assertions)]
             println!("{}:server: is ready", response);
+
+            #[cfg(debug_assertions)]
+            println!(
+                "{}:server: client complete {}",
+                response,
+                client_done.load(std::sync::atomic::Ordering::Relaxed)
+            );
 
             // loop until the client indicates it is done
             while !client_done.load(std::sync::atomic::Ordering::Relaxed) {
@@ -55,8 +64,9 @@ pub fn multicast_listener(
                 // we're assuming failures were timeouts, the client_done loop will stop us
                 match listener.recv_from(&mut buf) {
                     Ok((_len, remote_addr)) => {
-                        #[cfg(debug_assertions)]
+                        //#[cfg(debug_assertions)]
                         let data = &buf[.._len];
+
                         #[cfg(debug_assertions)]
                         println!(
                             "{}:server: got data: {} from: {}",
@@ -78,13 +88,23 @@ pub fn multicast_listener(
                             .expect("failed to respond");
 
                         #[cfg(debug_assertions)]
-                        println!("{}:server: sent response to: {}", response, remote_addr);
+                        println!(
+                            "{}:server: sent response {} to: {}",
+                            response, response, remote_addr
+                        );
                     }
                     Err(err) => {
-                        println!("{}:server: got an error: {}", response, err);
+                        //println!("{}:server: got an error: {}", response, err);
+                        panic!("{}:server: got an error: {}", response, err);
                     }
                 }
             }
+            #[cfg(debug_assertions)]
+            println!(
+                "{}:server: client complete {}",
+                response,
+                client_done.load(std::sync::atomic::Ordering::Relaxed)
+            );
 
             println!("{}:server: client is done", response);
         })
@@ -95,12 +115,12 @@ pub fn multicast_listener(
 }
 
 /// server: client socket handler
-/// binds a new socket connection on the client socket address
+/// binds a new socket connection on the network multicast channel
 fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
     let ip_addr = addr.ip();
 
     #[cfg(debug_assertions)]
-    println!("client address: {}", ip_addr);
+    println!("server broadcasting to: {}", ip_addr);
 
     let socket = new_socket(&addr)?;
 
@@ -133,10 +153,7 @@ fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
     //    Ok(_) => {}
     //}
     //?;
-    match bind_multicast(&socket, &addr) {
-        Err(e) => panic!("{}", e),
-        Ok(_) => {}
-    }
+    bind_multicast(&socket, &addr)?;
     Ok(socket.into())
 }
 
@@ -197,7 +214,7 @@ fn test_multicast(test: &'static str, addr: IpAddr) {
             .send_to(message, &addr)
             .expect("could not send to socket!");
     } else {
-        let socket = new_sender_ipv6(&addr).expect("could not create ipv4 sender!");
+        let socket = new_sender_ipv6(&addr).expect("could not create ipv6 sender!");
         socket
             .send_to(message, &addr)
             .expect("could not send to socket!");

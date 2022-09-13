@@ -20,7 +20,8 @@ fn client_socket_stream(mut reader: BufReader<File>, addr: SocketAddr) {
     #[cfg(debug_assertions)]
     println!("opening file...");
 
-    let mut buf = vec![];
+    //let mut buf = vec![];
+    let mut buf = vec![0u8; 64];
     while let Ok(_) = reader.read_until(b'\n', &mut buf) {
         //let mut buf = vec![0u8; 32];
         //while let Ok(_) = reader.read_exact(&mut buf) {
@@ -30,7 +31,8 @@ fn client_socket_stream(mut reader: BufReader<File>, addr: SocketAddr) {
         server_socket
             .send_to(&buf, &addr)
             .expect("could not send message to server socket!");
-        buf = vec![];
+        //buf = vec![];
+        buf = vec![0u8; 64];
 
         #[cfg(debug_assertions)]
         std::thread::sleep(std::time::Duration::from_millis(25));

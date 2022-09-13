@@ -32,9 +32,11 @@ pub fn new_socket(addr: &SocketAddr) -> io::Result<Socket> {
     };
 
     let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_reuse_port(true)?;
+    socket.set_freebind(true)?;
 
     // we're going to use read timeouts so that we don't hang waiting for packets
-    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    //socket.set_read_timeout(Some(Duration::from_millis(100)))?;
 
     Ok(socket)
 }
@@ -60,6 +62,7 @@ pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
 /// socket will accept input from any client i.e. ::0
 pub fn new_sender_ipv6(addr: &SocketAddr) -> io::Result<UdpSocket> {
     let socket = new_socket(addr)?;
+
     let mut ipv6_interface: u32 = 0;
 
     if !addr.is_ipv6() {
