@@ -22,18 +22,27 @@ pub fn client_socket_stream(mut reader: BufReader<File>, addr: SocketAddr) {
     println!("opening file...");
 
     //let mut buf = vec![];
-    let mut buf = vec![0u8; 64];
-    while let Ok(_) = reader.read_until(b'\n', &mut buf) {
+    //let mut buf = vec![0u8; 1024];
+    let mut buf: Vec<u8>;
+    buf = [0u8; 64].to_vec();
+    while let Ok(len) = reader.read_until(b'\n', &mut buf) {
         //let mut buf = vec![0u8; 32];
         //while let Ok(_) = reader.read_exact(&mut buf) {
         if buf.is_empty() {
             break;
         }
+
+        let msg = &buf;
+
+        #[cfg(debug_assertions)]
+        println!("len: {:?}\tmsg: {:?}", len, String::from_utf8_lossy(msg));
+
         server_socket
-            .send_to(&buf, &addr)
+            .send_to(msg, &addr)
             .expect("could not send message to server socket!");
         //buf = vec![];
-        buf = vec![0u8; 64];
+        //buf = [0u8; 64];
+        buf = [0u8; 64].to_vec();
 
         #[cfg(debug_assertions)]
         std::thread::sleep(std::time::Duration::from_millis(25));
