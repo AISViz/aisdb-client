@@ -36,6 +36,7 @@ pub fn new_socket(addr: &SocketAddr) -> io::Result<Socket> {
 
     // we're going to use read timeouts so that we don't hang waiting for packets
     //socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+    socket.set_read_timeout(None)?;
 
     Ok(socket)
 }

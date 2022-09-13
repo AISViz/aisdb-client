@@ -10,13 +10,10 @@ use server::{multicast_listener, NotifyServer};
 pub mod client;
 use client::{new_sender, new_sender_ipv6};
 
-pub const PORT: u16 = 9923;
+pub const PORT: u16 = 9922;
 
 /// Our generic test over different IPs
 fn test_multicast(test: &'static str, addr: IpAddr) {
-    //#[path = "client.rs"]
-    //pub mod client;
-
     assert!(addr.is_multicast());
     let addr = SocketAddr::new(addr, PORT);
 

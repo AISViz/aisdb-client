@@ -17,12 +17,14 @@ use socket::{bind_multicast, new_socket};
 /// server socket listener
 pub fn multicast_listener(
     response: &'static str,
-    client_done: Arc<AtomicBool>,
+    downstream_done: Arc<AtomicBool>,
     addr: SocketAddr,
 ) -> JoinHandle<()> {
     // A barrier to not start the client test code until after the server is running
-    let server_barrier = Arc::new(Barrier::new(2));
-    let client_barrier = Arc::clone(&server_barrier);
+
+    let upstream_barrier = Arc::new(Barrier::new(2));
+
+    let downstream_barrier = Arc::clone(&upstream_barrier);
 
     let join_handle = std::thread::Builder::new()
         .name(format!("{}:server", response))
@@ -32,7 +34,8 @@ pub fn multicast_listener(
             #[cfg(debug_assertions)]
             println!("{}:server: joined: {}", response, addr);
 
-            //server_barrier.wait();
+            #[cfg(test)]
+            upstream_barrier.wait();
 
             #[cfg(debug_assertions)]
             println!("{}:server: is ready", response);
@@ -41,24 +44,25 @@ pub fn multicast_listener(
             println!(
                 "{}:server: client complete {}",
                 response,
-                client_done.load(std::sync::atomic::Ordering::Relaxed)
+                downstream_done.load(std::sync::atomic::Ordering::Relaxed)
             );
 
             // loop until the client indicates it is done
-            while !client_done.load(std::sync::atomic::Ordering::Relaxed) {
+            while !downstream_done.load(std::sync::atomic::Ordering::Relaxed) {
                 // test receive and response code will go here...
-                let mut buf = [0u8; 64]; // receive buffer
+                let mut buf = [0u8; 1024]; // receive buffer
 
-                // we're assuming failures were timeouts, the client_done loop will stop us
+                // we're assuming failures were timeouts, the downstream_done loop will stop us
                 match listener.recv_from(&mut buf) {
                     Ok((_len, remote_addr)) => {
-                        //#[cfg(debug_assertions)]
+                        #[cfg(debug_assertions)]
                         let data = &buf[.._len];
 
                         #[cfg(debug_assertions)]
                         println!(
-                            "{}:server: got data: {} from: {}",
+                            "{}:server: got data: {} {} from: {}",
                             response,
+                            _len,
                             String::from_utf8_lossy(data),
                             remote_addr
                         );
@@ -82,23 +86,24 @@ pub fn multicast_listener(
                         );
                     }
                     Err(err) => {
-                        //println!("{}:server: got an error: {}", response, err);
-                        panic!("{}:server: got an error: {}", response, err);
+                        println!("{}:server: got an error: {}", response, err);
+                        //panic!("{}:server: got an error: {}", response, err);
                     }
                 }
             }
+
             #[cfg(debug_assertions)]
             println!(
                 "{}:server: client complete {}",
                 response,
-                client_done.load(std::sync::atomic::Ordering::Relaxed)
+                downstream_done.load(std::sync::atomic::Ordering::Relaxed)
             );
 
             println!("{}:server: client is done", response);
         })
         .unwrap();
 
-    client_barrier.wait();
+    downstream_barrier.wait();
     join_handle
 }
 
@@ -152,14 +157,13 @@ pub fn main() {
 
     // CIDR group 224 => multicast address range
     let addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
+    assert!(addr.is_multicast());
+    let socketaddr = SocketAddr::new(addr, PORT);
     //pub static IPV4: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 110).into();
     //pub static IPV6: Ipv6Addr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
 
-    // start server listener
-    let client_done = Arc::new(AtomicBool::new(false));
-    let _notify = NotifyServer(Arc::clone(&client_done));
-    assert!(addr.is_multicast());
-    let socketaddr = SocketAddr::new(addr, PORT);
-    let response = "0";
-    multicast_listener(response, client_done, socketaddr);
+    // start client listener
+    let downstream_done = Arc::new(AtomicBool::new(false));
+    let _notify = NotifyServer(Arc::clone(&downstream_done));
+    multicast_listener("0", downstream_done, socketaddr);
 }
