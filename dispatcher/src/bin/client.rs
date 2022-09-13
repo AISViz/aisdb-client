@@ -7,48 +7,6 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 pub mod socket;
 use socket::{bind_multicast, new_socket};
 
-pub fn client_socket_stream(mut reader: BufReader<File>, addr: SocketAddr) {
-    let server_socket: UdpSocket;
-    match addr.is_ipv4() {
-        true => {
-            server_socket = new_sender(&addr).expect("could not create ipv4 sender!");
-        }
-        false => {
-            server_socket = new_sender_ipv6(&addr).expect("could not create ipv6 sender!");
-        }
-    };
-
-    #[cfg(debug_assertions)]
-    println!("opening file...");
-
-    //let mut buf = vec![];
-    //let mut buf = vec![0u8; 1024];
-    let mut buf: Vec<u8>;
-    buf = [0u8; 64].to_vec();
-    while let Ok(len) = reader.read_until(b'\n', &mut buf) {
-        //let mut buf = vec![0u8; 32];
-        //while let Ok(_) = reader.read_exact(&mut buf) {
-        if buf.is_empty() {
-            break;
-        }
-
-        let msg = &buf;
-
-        #[cfg(debug_assertions)]
-        println!("len: {:?}\tmsg: {:?}", len, String::from_utf8_lossy(msg));
-
-        server_socket
-            .send_to(msg, &addr)
-            .expect("could not send message to server socket!");
-        //buf = vec![];
-        //buf = [0u8; 64];
-        buf = [0u8; 64].to_vec();
-
-        #[cfg(debug_assertions)]
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-}
-
 /// new data output socket to the server IPv4 address
 /// socket will accept response from any server i.e. 0.0.0.0
 pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
@@ -107,6 +65,53 @@ pub fn new_sender_ipv6(addr: &SocketAddr) -> io::Result<UdpSocket> {
 
     //Ok(socket.into_udp_socket())
     Ok(socket.into())
+}
+
+pub fn client_socket_stream(
+    mut reader: BufReader<File>,
+    addr: SocketAddr,
+    //upstream_done: Arc<AtomicBool>,
+) {
+    let server_socket: UdpSocket;
+    match addr.is_ipv4() {
+        true => {
+            server_socket = new_sender(&addr).expect("could not create ipv4 sender!");
+        }
+        false => {
+            server_socket = new_sender_ipv6(&addr).expect("could not create ipv6 sender!");
+        }
+    };
+
+    #[cfg(debug_assertions)]
+    println!("opening file...");
+
+    let mut buf = vec![];
+    //let mut buf = vec![0u8; 1024];
+    //let mut buf: Vec<u8>;
+    //buf = [0u8; 64].to_vec();
+    while let Ok(len) = reader.read_until(b'\n', &mut buf) {
+        //let mut buf = vec![0u8; 32];
+        //while let Ok(_) = reader.read_exact(&mut buf) {
+        if buf.is_empty() {
+            break;
+        }
+
+        //let msg = &buf[len..];
+        let msg = &buf;
+
+        #[cfg(debug_assertions)]
+        println!("len: {:?}\tmsg: {:?}", len, String::from_utf8_lossy(msg));
+
+        server_socket
+            .send_to(msg, &addr)
+            .expect("could not send message to server socket!");
+        buf = vec![];
+        //buf = [0u8; 64];
+        //buf = [0u8; 64].to_vec();
+
+        //#[cfg(debug_assertions)]
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
 }
 
 fn main() {

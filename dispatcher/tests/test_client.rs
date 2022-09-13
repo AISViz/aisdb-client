@@ -26,8 +26,11 @@ fn test_client_socket_stream() {
     let _notify = NotifyServer(Arc::clone(&downstream_done));
     multicast_listener("0", downstream_done, socketaddr);
 
+    // create some testing data
+
     // stream some random bytes to the server
-    let file = File::open("/dev/random").expect("opening random!");
+    //let file = File::open("/dev/random").expect("opening random!");
+    let file = File::open("../aisdb/tests/test_data_20211101.nm4").expect("opening test data");
     let reader = BufReader::new(file);
     let _ = client_socket_stream(reader, socketaddr);
 }
