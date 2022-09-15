@@ -17,9 +17,9 @@ name = "server"
 socket2 = { version = "0.4.7", features=["all"] }
 #lazy_static="1.4"
 
-#[dependencies.pico-args]
-#version = "0.4.2"
-#features = [ "eq-separator",]
+[dependencies.pico-args]
+version = "0.5.0"
+features = [ "eq-separator",]
 
 [profile.release]
 lto = true
