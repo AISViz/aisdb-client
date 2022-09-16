@@ -47,3 +47,6 @@ profile
 release
 target
 testdata
+dispatcher/.git
+dispatcher/target
+dispatcher/.gitignore

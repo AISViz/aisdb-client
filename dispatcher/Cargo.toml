@@ -1,10 +1,9 @@
 [package]
 version = "0.0.1"
-name = "aisdb_receiver"
-authors = [ "MERIDIAN // Matt Smith matthew.smith@dal.ca",]
+name = "dispatcher"
+authors = [ "Matt Smith matt24smith@gmail.com",]
 edition = "2021"
-description = "AIS receiver and dispatcher"
-homepage = "https://aisdb.meridian.cs.dal.ca/"
+description = "Network dispatcher client and logging server"
 
 [[bin]]
 name = "client"
@@ -14,8 +13,7 @@ name = "server"
 
 
 [dependencies]
-socket2 = { version = "0.4.7", features=["all"] }
-#lazy_static="1.4"
+socket2 = { version = "0.4.7", features = ["all"] }
 
 [dependencies.pico-args]
 version = "0.5.0"

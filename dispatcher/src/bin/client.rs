@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufRead, BufReader};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::io::{BufReader, Read};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::str::FromStr;
 
 #[path = "../socket.rs"]
 pub mod socket;
@@ -22,7 +23,6 @@ pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
     let target_addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), 0);
     bind_socket(&socket, &target_addr)?;
 
-    //Ok(socket.into_udp_socket())
     Ok(socket.into())
 }
 
@@ -34,36 +34,6 @@ pub fn new_sender_ipv6(addr: &SocketAddr) -> io::Result<UdpSocket> {
     if !addr.is_ipv6() {
         panic!("invalid socket address type!")
     }
-    /*
-       if addr.ip().is_multicast() && addr.ip().is_ipv6() {
-       let mut ipv6_interface: u32 = 0;
-       loop {
-    // IPv6 requires explicitly defining the host socket interface
-    // this varies between hosts, and don't know how to check,
-    // so try them all until one works
-    let result = socket.set_multicast_if_v6(ipv6_interface);
-    #[cfg(debug_assertions)]
-    println!(
-    "client: attempting to open listening socket on ipv6 interface {}",
-    ipv6_interface
-    );
-    match result {
-    Err(e) => match e.raw_os_error() {
-    Some(99) | Some(101) => {
-    ipv6_interface += 1;
-    }
-    _ => {
-    panic!("{}", e);
-    }
-    },
-    Ok(_) => {
-    break;
-    //return Ok(socket.into());
-    }
-    }
-    }
-    }
-    */
     //socket.bind(&SockAddr::from(SocketAddr::new( Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0,)))?;
     let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0);
     bind_socket(&socket, &target_addr)?;
@@ -73,6 +43,7 @@ pub fn new_sender_ipv6(addr: &SocketAddr) -> io::Result<UdpSocket> {
 
 pub fn client_socket_stream(
     mut reader: BufReader<File>,
+    //mut file: File,
     addr: SocketAddr,
 ) -> io::Result<UdpSocket> {
     let server_socket = match addr.is_ipv4() {
@@ -83,32 +54,30 @@ pub fn client_socket_stream(
     #[cfg(debug_assertions)]
     println!("opening file...");
 
-    let mut buf = vec![];
-    while let Ok(_len) = reader.read_until(b'\n', &mut buf) {
-        if buf.is_empty() {
+    //let mut buf = vec![];
+    //while let Ok(_len) = reader.read_until(b'\n', &mut buf) {
+    let mut buf = vec![0u8; 1024];
+    //while let Ok(_) = reader.read_exact(&mut buf) {
+    while let Ok(c) = reader.read(&mut buf) {
+        if c == 0 {
             break;
         }
 
-        let msg = &buf;
-
-        #[cfg(debug_assertions)]
-        println!("len: {:?}\tmsg: {:?}", _len, String::from_utf8_lossy(msg));
+        //#[cfg(debug_assertions)]
+        //println!("\n{} client: {:?}", c, String::from_utf8_lossy(&buf[..c]));
 
         server_socket
-            .send_to(msg, &addr)
+            .send_to(&buf[..c], &addr)
             .expect("could not send message to server socket!");
-        buf = vec![];
+        //buf = vec![];
+        buf = vec![0u8; 1024];
     }
     Ok(server_socket)
 }
 
-fn parse_path(s: &std::ffi::OsStr) -> Result<std::path::PathBuf, &'static str> {
-    Ok(s.into())
-}
-
 struct ClientArgs {
+    listen_addr: String,
     path: std::path::PathBuf,
-    //listenaddr: String,
     port: u16,
 }
 
@@ -120,25 +89,30 @@ fn parse_args() -> Result<ClientArgs, pico_args::Error> {
     std::process::exit(0);
     }
     */
+    fn parse_path(s: &std::ffi::OsStr) -> Result<std::path::PathBuf, &'static str> {
+        Ok(s.into())
+    }
 
     let args = ClientArgs {
         port: pargs.value_from_str("--port")?,
         path: pargs.value_from_os_str("--path", parse_path)?,
-        //listenaddr: pargs .opt_value_from_str("--port")? .unwrap_or("0.0.0.0".to_string()),
+        listen_addr: pargs
+            .opt_value_from_str("--listen_addr")?
+            //.unwrap_or("0.0.0.0".to_string())
+            .unwrap_or_else(|| "0.0.0.0".to_string()),
     };
+
     Ok(args)
 }
 
 pub fn main() {
-    // read antenna socket data
-    // downsampling
+    // read socket or file data
+    // TODO: downsampling ?? might require callback or plugin for each data type
     // send to server
 
-    // todo: read from args
     //const PORT: u16 = 9923;
     //let devpath = "../aisdb/tests/test_data_20211101.nm4";
     //let listensocketaddr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), PORT);
-
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
@@ -146,9 +120,11 @@ pub fn main() {
             std::process::exit(1);
         }
     };
-    let listensocketaddr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), args.port);
+    let listenaddr = IpAddr::from_str(&args.listen_addr).unwrap();
+    let listensocketaddr = SocketAddr::new(listenaddr, args.port);
 
     let file = File::open(&args.path).unwrap_or_else(|_| panic!("opening {:?}", &args.path));
     let reader = BufReader::new(file);
     let _ = client_socket_stream(reader, listensocketaddr);
+    //let _ = client_socket_stream(file, listensocketaddr);
 }
