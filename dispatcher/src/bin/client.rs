@@ -17,7 +17,8 @@ pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
         panic!("invalid socket address type!")
     }
     if addr.ip().is_multicast() {
-        socket.set_multicast_if_v4(&Ipv4Addr::new(0, 0, 0, 0))?;
+        //socket.set_multicast_if_v4(&Ipv4Addr::new(0, 0, 0, 0))?;
+        socket.set_multicast_loop_v4(true)?;
     }
     //socket.bind(&SockAddr::from(SocketAddr::new( Ipv4Addr::new(0, 0, 0, 0).into(), 0,)))?;
     let target_addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), 0);
@@ -28,17 +29,42 @@ pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
 
 /// new data output socket to the client IPv6 address
 /// socket will allow any downstream IP i.e. ::0
-pub fn new_sender_ipv6(addr: &SocketAddr) -> io::Result<UdpSocket> {
-    let socket = new_socket(addr)?;
+fn new_sender_ipv6(addr: &SocketAddr, ipv6_interface: u32) -> io::Result<UdpSocket> {
+    let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0);
 
     if !addr.is_ipv6() {
         panic!("invalid socket address type!")
     }
-    //socket.bind(&SockAddr::from(SocketAddr::new( Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0,)))?;
-    let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0);
-    bind_socket(&socket, &target_addr)?;
 
+    let socket = new_socket(addr)?;
+    if addr.ip().is_multicast() {
+        let _a = socket.set_multicast_if_v6(ipv6_interface);
+        let _b = bind_socket(&socket, &target_addr);
+
+        assert!(_a.is_ok());
+        assert!(_b.is_ok());
+    } else {
+    }
     Ok(socket.into())
+    //socket.bind(&SockAddr::from(SocketAddr::new( Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0,)))?;
+    //let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0);
+    //bind_socket(&socket, &target_addr)?;
+
+    //Ok(socket.into())
+}
+
+pub fn client_check_ipv6_interfaces(addr: SocketAddr) -> io::Result<UdpSocket> {
+    for i in 0..32 {
+        #[cfg(debug_assertions)]
+        println!("checking interface {}", i);
+        let socket = new_sender_ipv6(&addr, i)?;
+        let result = socket.send_to(b"", &addr);
+        match result {
+            Ok(_r) => return Ok(socket),
+            Err(e) => eprintln!("{:?}", e),
+        }
+    }
+    panic!("No suitable network interfaces were found!");
 }
 
 pub fn client_socket_stream(
@@ -48,7 +74,8 @@ pub fn client_socket_stream(
 ) -> io::Result<UdpSocket> {
     let server_socket = match addr.is_ipv4() {
         true => new_sender(&addr).expect("could not create ipv4 sender!"),
-        false => new_sender_ipv6(&addr).expect("could not create ipv6 sender!"),
+        //false => new_sender_ipv6(&addr, client_check_interfaces(addr)).expect("could not create ipv6 sender!"),
+        false => client_check_ipv6_interfaces(addr).expect("could not create ipv6 sender!"),
     };
 
     #[cfg(debug_assertions)]

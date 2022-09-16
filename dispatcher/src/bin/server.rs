@@ -14,7 +14,7 @@ use std::thread::JoinHandle;
 
 #[path = "../socket.rs"]
 pub mod socket;
-use socket::{bind_socket, new_socket};
+use socket::new_socket;
 
 /// server: client socket handler
 /// binds a new socket connection on the network multicast channel
@@ -22,67 +22,74 @@ fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
     #[cfg(debug_assertions)]
     println!("server broadcasting to: {}", addr.ip());
     assert!(addr.ip().is_multicast());
-
-    let socket = new_socket(&addr)?;
     match addr.ip() {
         IpAddr::V4(ref mdns_v4) => {
             // join to the multicast address, with all interfaces
+            let socket = new_socket(&addr)?;
             socket.join_multicast_v4(mdns_v4, &Ipv4Addr::new(0, 0, 0, 0))?;
+            Ok(socket.into())
         }
         IpAddr::V6(ref mdns_v6) => {
-            // join to the multicast address, with all interfaces (ipv6 uses indexes not addresses)
-            socket.join_multicast_v6(mdns_v6, 0)?;
-            socket.set_only_v6(true)?;
-        }
-    };
-    if addr.ip().is_ipv6() {
-        let mut ipv6_interface: u32 = 0;
-        loop {
+            let ipv6_interface: u32 = 0;
             // IPv6 requires explicitly defining the host socket interface
             // this varies between hosts, and don't know how to check,
             // so try them all until one works
             //let result = socket.set_multicast_if_v6(ipv6_interface);
-            #[cfg(debug_assertions)]
-            if ipv6_interface > 32 {
-                panic!("no suitable devices!");
-            }
-            println!(
-                "bind_socket: attempting to bind {} on ipv6 interface {}",
-                addr, ipv6_interface
-            );
-            socket.set_multicast_if_v6(ipv6_interface)?;
             /*
-            match bind_socket(&socket, &addr) {
-                Err(e) => match e.raw_os_error() {
-                    Some(0) => {
-                        ipv6_interface += 1;
-                    }
-                    _ => {
-                        panic!("{}", e);
-                    }
-                },
-                Ok(_) => {
-                    //break;
-                    //return Ok(socket.into());
+            loop {
+                if ipv6_interface > 32 {
+                    panic!("no suitable devices!");
                 }
-            }
-            */
+                #[cfg(debug_assertions)]
+                println!(
+                    "bind_socket: attempting to bind {} on ipv6 interface {}",
+                    addr, ipv6_interface
+                );
+                */
+            let socket = new_socket(&addr)?;
+            socket.join_multicast_v6(mdns_v6, 0)?;
+            socket.set_multicast_if_v6(ipv6_interface)?;
+            Ok(socket.into())
+            /*
+            // join to the multicast address, with all interfaces (ipv6 uses indexes not addresses)
+            //socket.set_only_v6(true)?;
+                match bind_socket(&socket, &addr) {
+                    Err(e) => match e.raw_os_error() {
+                        Some(0) => {
+                            ipv6_interface += 1;
+                        }
+                        _ => {
+                            panic!("{}", e);
+                        }
+                    },
+                    Ok(_) => {
+                        //break;
+                        //return Ok(socket.into());
+                    }
+                }
+                */
+            /*
             if let Err(e) = bind_socket(&socket, &addr) {
                 match e.raw_os_error() {
-                    Some(0) => {
+                    Some(19) => {
                         ipv6_interface += 1;
                     }
                     _ => {
                         panic!("{}", e);
                     }
                 }
+            } else {
+                return Ok(socket.into());
             }
+            */
+            //}
         }
-    };
+    }
+    //};
     //if let Err(e) = bind_socket(&socket, &addr) {
     //    panic!("failed to bind socket!\t{:?}", e)
     // }
-    Ok(socket.into())
+    //Ok(socket.into())
 }
 
 pub fn join_unicast(addr: SocketAddr) -> io::Result<UdpSocket> {
@@ -160,6 +167,7 @@ pub fn listener(
                         //let data = &buf[.._len];
                         //let _ = writer.write(data).unwrap_or_else(|_| panic!("writing to {:?}", &logfile));
 
+                        /*
                         #[cfg(debug_assertions)]
                         println!(
                             "\n{}:server: got bytes: {} from: {}\nmsg: {}",
@@ -168,6 +176,7 @@ pub fn listener(
                             _remote_addr,
                             String::from_utf8_lossy(&buf[..c]),
                         );
+                        */
 
                         let _ = writer
                             .write(&buf[..c])

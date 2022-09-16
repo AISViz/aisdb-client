@@ -31,73 +31,68 @@ fn new_client(file: File, target_addr: IpAddr, port: u16) -> Result<UdpSocket, s
     //client_socket_stream(file, targetsocketaddr)
 }
 
-fn truncate(path: PathBuf) -> Result<(), std::io::Error> {
-    println!(
-        "truncating log: {} bytes",
-        File::open(&path)
-            .expect("opening logfile")
-            .metadata()
-            .unwrap()
-            .len()
-    );
+fn truncate(path: PathBuf) -> Result<String, std::io::Error> {
+    let info = match File::open(&path) {
+        Ok(f) => {
+            format!("{}", f.metadata().unwrap().len())
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            format!("0")
+        }
+    };
+
     File::create(&path)?;
-    Ok(())
+    Ok(info)
 }
 
-const TESTDATA: &str = "../src/aisdb/tests/test_data_20211101.nm4";
+const TESTDATA: &str = "../aisdb/tests/test_data_20211101.nm4";
+
+fn test_client(pathstr: &str, listen_addr: IpAddr, target_addr: IpAddr, port: u16) {
+    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap()).unwrap();
+    new_server(listen_addr, port, PathBuf::from_str(pathstr).unwrap());
+
+    let file = File::open(TESTDATA).expect("opening test data");
+    let _ = new_client(file, target_addr, port);
+    sleep(Duration::from_millis(10));
+    println!("log size: {}", bytesize);
+}
 
 #[test]
 fn test_client_socket_stream_unicast_ipv4() {
-    let pathstr = "../src/testdata/streamoutput_client_ipv4_unicast.log";
+    let pathstr = "../testdata/streamoutput_client_ipv4_unicast.log";
     let listen_addr: IpAddr = Ipv4Addr::new(0, 0, 0, 0).into();
     assert!(!listen_addr.is_multicast());
-    new_server(listen_addr, 9910, PathBuf::from_str(pathstr).unwrap());
-
     let target_addr: IpAddr = Ipv4Addr::new(127, 0, 0, 1).into();
-    let file = File::open(TESTDATA).expect("opening test data");
-    let _ = new_client(file, target_addr, 9910);
-    sleep(Duration::from_millis(10));
-
-    let _ = truncate(PathBuf::from_str(pathstr).unwrap());
+    test_client(pathstr, listen_addr, target_addr, 9910)
 }
 
 #[test]
 fn test_client_socket_stream_multicast_ipv4() {
-    let logfile =
-        PathBuf::from_str("../src/testdata/streamoutput_client_ipv4_multicast.log").unwrap();
-    let listen_addr: IpAddr = Ipv4Addr::new(0, 0, 0, 0).into();
-    new_server(listen_addr, 9911, logfile);
-
-    let addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
-    assert!(addr.is_multicast());
-    let file = File::open(TESTDATA).expect("opening test data");
-    let _ = new_client(file, addr, 9911);
+    let pathstr = "../testdata/streamoutput_client_ipv4_multicast.log";
+    let listen_addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
+    let target_addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
+    assert!(listen_addr.is_multicast());
+    assert!(target_addr.is_multicast());
+    test_client(pathstr, listen_addr, target_addr, 9911)
 }
 
 #[test]
 fn test_client_socket_stream_unicast_ipv6() {
-    let logfile =
-        PathBuf::from_str("../src/testdata/streamoutput_client_ipv6_unicast.log").unwrap();
+    let pathstr = "../testdata/streamoutput_client_ipv6_unicast.log";
     let listen_addr: IpAddr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into();
     assert!(!listen_addr.is_multicast());
-    new_server(listen_addr, 9912, logfile);
-
     let target_addr: IpAddr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1).into();
-    let file = File::open(TESTDATA).expect("opening test data");
-    let _ = new_client(file, target_addr, 9912);
+    test_client(pathstr, listen_addr, target_addr, 9912)
 }
 
 // TODO: fix multicast over ipv6
 // this test hangs instead of throwing an error
-/*
 #[test]
 fn test_client_socket_stream_multicast_ipv6() {
-let addr: IpAddr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
-assert!(addr.is_multicast());
+    let pathstr = "../testdata/streamoutput_client_ipv6_multicast.log";
+    let addr: IpAddr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
+    assert!(addr.is_multicast());
 
-new_server(addr, PORT, true);
-
-let file = File::open("../src/aisdb/tests/test_data_20211101.nm4").expect("opening test data");
-let _ = new_client(file, addr, PORT);
+    test_client(pathstr, addr, addr, 9913)
 }
-*/
