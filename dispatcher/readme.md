@@ -16,6 +16,7 @@ Client/server application to send data from a file descriptor or socket over the
 - [X] IPv6
 - [X] Unix
 - [X] Windows (untested)
+- [X] [Multicast](https://en.wikipedia.org/wiki/Multicast) IP routing
 
 
 

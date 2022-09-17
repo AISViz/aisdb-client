@@ -1,11 +1,7 @@
-// https://bluejekyll.github.io/blog/posts/multicasting-in-rust/
-
-extern crate socket2;
-
 use std::fs::OpenOptions;
 use std::io;
 use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,82 +10,60 @@ use std::thread::JoinHandle;
 
 #[path = "../socket.rs"]
 pub mod socket;
-use socket::new_socket;
+use socket::{bind_socket, new_socket};
 
 /// server: client socket handler
 /// binds a new socket connection on the network multicast channel
 fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
+    // https://bluejekyll.github.io/blog/posts/multicasting-in-rust/
     #[cfg(debug_assertions)]
     println!("server broadcasting to: {}", addr.ip());
-    assert!(addr.ip().is_multicast());
+    //assert!(addr.ip().is_multicast() || addr.ip().);
     match addr.ip() {
         IpAddr::V4(ref mdns_v4) => {
-            // join to the multicast address, with all interfaces
             let socket = new_socket(&addr)?;
+            // join multicast channel on all interfaces
             socket.join_multicast_v4(mdns_v4, &Ipv4Addr::new(0, 0, 0, 0))?;
+            //socket.bind(&SockAddr::from(addr))?;
+            bind_socket(&socket, &addr)?;
+            //println!("server listening on addr: {}", addr);
+
             Ok(socket.into())
         }
         IpAddr::V6(ref mdns_v6) => {
-            let ipv6_interface: u32 = 0;
-            // IPv6 requires explicitly defining the host socket interface
-            // this varies between hosts, and don't know how to check,
-            // so try them all until one works
-            //let result = socket.set_multicast_if_v6(ipv6_interface);
-            /*
-            loop {
-                if ipv6_interface > 32 {
-                    panic!("no suitable devices!");
-                }
-                #[cfg(debug_assertions)]
-                println!(
-                    "bind_socket: attempting to bind {} on ipv6 interface {}",
-                    addr, ipv6_interface
-                );
-                */
+            #[cfg(debug_assertions)]
+            println!("mdns_v6: {}", mdns_v6);
             let socket = new_socket(&addr)?;
-            socket.join_multicast_v6(mdns_v6, 0)?;
-            socket.set_multicast_if_v6(ipv6_interface)?;
-            Ok(socket.into())
-            /*
-            // join to the multicast address, with all interfaces (ipv6 uses indexes not addresses)
-            //socket.set_only_v6(true)?;
-                match bind_socket(&socket, &addr) {
-                    Err(e) => match e.raw_os_error() {
-                        Some(0) => {
-                            ipv6_interface += 1;
-                        }
-                        _ => {
-                            panic!("{}", e);
-                        }
-                    },
-                    Ok(_) => {
-                        //break;
-                        //return Ok(socket.into());
-                    }
-                }
-                */
-            /*
-            if let Err(e) = bind_socket(&socket, &addr) {
-                match e.raw_os_error() {
-                    Some(19) => {
-                        ipv6_interface += 1;
-                    }
-                    _ => {
-                        panic!("{}", e);
-                    }
-                }
-            } else {
-                return Ok(socket.into());
+            // bind to all interfaces
+            //assert!(socket.set_multicast_if_v6(0).is_ok());
+
+            // join multicast channel
+            assert!(socket.join_multicast_v6(mdns_v6, 0).is_ok());
+            //socket.join_multicast_v6(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), addr.port().into())?;
+
+            // disable ipv4->ipv6 multicast rerouting
+            assert!(socket.set_only_v6(true).is_ok());
+
+            //let bind_result = socket.bind(&SockAddr::from(addr));
+            //let socketv6addr = SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), addr.port(), 0, 0);
+            //let bindaddr = SockAddr::from(socketv6addr);
+            //println!("server listening on addr: {:?}", bindaddr);
+            //let bind_result = socket.bind(&bindaddr);
+            let listenaddr = SocketAddr::new(
+                IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
+                //IpAddr::V6(Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110)),
+                //addr.ip().into(),
+                //IpAddr::V6(*mdns_v6),
+                addr.port(),
+            );
+            let bind_result = bind_socket(&socket, &listenaddr);
+            if bind_result.is_err() {
+                panic!("binding to {:?}  {:?}", addr, bind_result);
             }
-            */
-            //}
+
+            Ok(socket.into())
         }
     }
-    //};
-    //if let Err(e) = bind_socket(&socket, &addr) {
-    //    panic!("failed to bind socket!\t{:?}", e)
-    // }
-    //Ok(socket.into())
 }
 
 pub fn join_unicast(addr: SocketAddr) -> io::Result<UdpSocket> {
@@ -103,7 +77,7 @@ pub fn listener(
     response: String,
     addr: SocketAddr,
     logfile: PathBuf,
-    #[cfg(test)] downstream_done: Arc<AtomicBool>,
+    multicast: bool,
 ) -> JoinHandle<()> {
     // A barrier to not start the client test code until after the server is running
     let upstream_barrier = Arc::new(Barrier::new(2));
@@ -122,7 +96,7 @@ pub fn listener(
         }
     };
     //let mut writer = BufWriter::with_capacity(1024, file);
-    let listener = match addr.ip().is_multicast() {
+    let listener = match addr.ip().is_multicast() || multicast {
         false => join_unicast(addr).expect("failed to create socket listener!"),
         true => {match join_multicast(addr) {
             Ok(s) => s,
@@ -142,46 +116,25 @@ pub fn listener(
             #[cfg(debug_assertions)]
             println!("{}:server: is ready", response);
 
-            //#[cfg(debug_assertions)]
-            #[cfg(test)]
-            println!(
-                "{}:server: client complete {}",
-                response,
-                downstream_done.load(std::sync::atomic::Ordering::Relaxed)
-            );
-
-            // loop until the client indicates it is done
             let mut buf = [0u8; 1024]; // receive buffer
-                                       /*
-                                       //std::thread::spawn(move || {
-                                           for sig in signals.forever() {
-                                               println!("Received signal {:?}", sig);
-                                               break
-                                           }
-                                       //});
-                                       */
             loop {
-                //while !downstream_done.load(std::sync::atomic::Ordering::Relaxed) {
-                match listener.recv_from(&mut buf) {
+                match listener.recv_from(&mut buf[0..]) {
                     Ok((c, _remote_addr)) => {
-                        //let data = &buf[.._len];
-                        //let _ = writer.write(data).unwrap_or_else(|_| panic!("writing to {:?}", &logfile));
-
                         /*
                         #[cfg(debug_assertions)]
                         println!(
-                            "\n{}:server: got bytes: {} from: {}\nmsg: {}",
-                            response,
-                            c,
-                            _remote_addr,
-                            String::from_utf8_lossy(&buf[..c]),
+                        "\n{}:server: got bytes: {} from: {}\nmsg: {}",
+                        response,
+                        c,
+                        _remote_addr,
+                        String::from_utf8_lossy(&buf[0..c]),
                         );
                         */
 
                         let _ = writer
-                            .write(&buf[..c])
+                            .write(&buf[0..c])
                             .unwrap_or_else(|_| panic!("writing to {:?}", &logfile));
-                        buf = [0u8; 1024];
+                        //buf = [0u8; 1024];
 
                         /*
                         // create a socket to send the response
@@ -204,32 +157,18 @@ pub fn listener(
                     }
                     Err(err) => {
                         writer.flush().unwrap();
-                        //file.flush().unwrap();
                         eprintln!("{}:server: got an error: {}", response, err);
                         #[cfg(debug_assertions)]
                         panic!("{}:server: got an error: {}", response, err);
-                        //break
                     }
                 }
             }
-
-            /*
-            #[cfg(debug_assertions)]
-            println!(
-                "{}:server: client complete {}",
-                response,
-                downstream_done.load(std::sync::atomic::Ordering::Relaxed)
-            );
-
-            println!("{}:server: client is done", response);
-
-            writer.flush().unwrap();
-            //file.flush().unwrap();
-            */
         })
         .unwrap();
 
     downstream_barrier.wait();
+    #[cfg(debug_assertions)]
+    println!("server: complete");
     join_handle
 }
 
@@ -266,12 +205,6 @@ fn parse_args() -> Result<ServerArgs, pico_args::Error> {
 }
 
 pub fn main() {
-    // todo: read args from command line
-    //const PORT: u16 = 9923;
-    // CIDR group 224 => multicast address range
-    //let addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
-    //assert!(addr.is_multicast());
-
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
@@ -283,24 +216,27 @@ pub fn main() {
     for hostname in args.client_addr {
         let hostaddr = IpAddr::from_str(&hostname).unwrap();
         let socketaddr = SocketAddr::new(hostaddr, args.port);
-        #[cfg(test)]
-        let downstream_done = Arc::new(AtomicBool::new(false));
+        let mut logpath: String = "".to_owned();
 
+        for pathsegment in [
+            &args.path,
+            &socketaddr.ip().to_string(),
+            &".".to_string(),
+            &socketaddr.port().to_string(),
+        ] {
+            logpath.push_str(pathsegment);
+        }
+
+        println!(
+            "logging transmissions from {} to {}",
+            hostaddr.to_string(),
+            logpath
+        );
         listener(
             hostaddr.to_string(),
             socketaddr,
-            PathBuf::from_str(&args.path).unwrap(),
-            #[cfg(test)]
-            downstream_done,
+            PathBuf::from_str(&logpath).unwrap(),
+            socketaddr.ip().is_multicast(),
         );
     }
-
-    //let addr: IpAddr = Ipv4Addr::new(127, 0, 0, 1).into();
-
-    //pub static IPV4: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 110).into();
-    //pub static IPV6: Ipv6Addr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
-
-    // start client listener
-    //let _notify = NotifyServer(Arc::clone(&downstream_done));
-    //multicast_listener("0", downstream_done, socketaddr);
 }

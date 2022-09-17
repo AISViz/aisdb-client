@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
 #[path = "../src/bin/server.rs"]
 pub mod server;
@@ -13,16 +15,22 @@ pub mod client;
 use client::{client_check_ipv6_interfaces, new_sender};
 
 /// Our generic test over different IPs
-fn test_server_listener(test: &'static str, addr: IpAddr, port: u16, logfile: PathBuf) {
-    let multicast = addr.is_multicast();
-    assert!(addr.is_multicast() == multicast);
+fn test_server_listener(
+    test: &'static str,
+    addr: IpAddr,
+    port: u16,
+    logfile: PathBuf,
+    multicast: bool,
+) {
     let addr = SocketAddr::new(addr, port);
 
     let client_done = Arc::new(AtomicBool::new(false));
     let _notify = NotifyServer(Arc::clone(&client_done));
 
     // start server
-    listener(addr.to_string(), addr, logfile, client_done);
+    listener(addr.to_string(), addr, logfile, multicast);
+
+    sleep(Duration::from_millis(100));
 
     // client test code send and receive code after here
     println!("{}:client: running", test);
@@ -47,7 +55,7 @@ fn test_server_ipv4_unicast() {
     let ipv4: IpAddr = Ipv4Addr::new(127, 0, 0, 1).into();
     let logfile: PathBuf = PathBuf::from_str("../testdata/streamoutput_ipv4_unicast.log").unwrap();
     assert!(ipv4.is_ipv4() && !ipv4.is_multicast());
-    test_server_listener("ipv4", ipv4, 9900, logfile);
+    test_server_listener("ipv4", ipv4, 9900, logfile, false);
 }
 
 #[test]
@@ -56,7 +64,7 @@ fn test_server_ipv4_multicast() {
     let logfile: PathBuf =
         PathBuf::from_str("../testdata/streamoutput_ipv4_multicast.log").unwrap();
     assert!(ipv4.is_ipv4() && ipv4.is_multicast());
-    test_server_listener("ipv4", ipv4, 9901, logfile);
+    test_server_listener("ipv4", ipv4, 9901, logfile, true);
 }
 
 #[test]
@@ -64,7 +72,7 @@ fn test_server_ipv6_unicast() {
     let listen: IpAddr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into();
     let logfile: PathBuf = PathBuf::from_str("../testdata/streamoutput_ipv6_unicast.log").unwrap();
     assert!(listen.is_ipv6() && !listen.is_multicast());
-    test_server_listener("ipv6", listen, 9902, logfile);
+    test_server_listener("ipv6", listen, 9902, logfile, false);
 }
 
 #[test]
@@ -73,5 +81,5 @@ fn test_server_ipv6_multicast() {
     let logfile: PathBuf =
         PathBuf::from_str("../testdata/streamoutput_ipv6_multicast.log").unwrap();
     assert!(ipv6.is_ipv6() && ipv6.is_multicast());
-    test_server_listener("ipv6", ipv6, 9903, logfile);
+    test_server_listener("ipv6", ipv6, 9903, logfile, true);
 }

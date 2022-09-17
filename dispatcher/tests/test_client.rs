@@ -17,11 +17,17 @@ use client::client_socket_stream;
 mod server;
 use server::{listener, NotifyServer};
 
-fn new_server(listen_addr: IpAddr, port: u16, path: PathBuf) -> JoinHandle<()> {
+fn new_server(listen_addr: IpAddr, port: u16, path: PathBuf, multicast: bool) -> JoinHandle<()> {
     let socketaddr = SocketAddr::new(listen_addr, port);
-    let downstream_done = Arc::new(AtomicBool::new(false));
-    let _notify = NotifyServer(Arc::clone(&downstream_done));
-    listener(socketaddr.to_string(), socketaddr, path, downstream_done)
+    //let downstream_done = Arc::new(AtomicBool::new(false));
+    //let _notify = NotifyServer(Arc::clone(&downstream_done));
+    listener(
+        socketaddr.to_string(),
+        socketaddr,
+        path,
+        multicast,
+        //downstream_done,
+    )
 }
 
 fn new_client(file: File, target_addr: IpAddr, port: u16) -> Result<UdpSocket, std::io::Error> {
@@ -48,13 +54,24 @@ fn truncate(path: PathBuf) -> Result<String, std::io::Error> {
 
 const TESTDATA: &str = "../aisdb/tests/test_data_20211101.nm4";
 
-fn test_client(pathstr: &str, listen_addr: IpAddr, target_addr: IpAddr, port: u16) {
+fn test_client(
+    pathstr: &str,
+    listen_addr: IpAddr,
+    target_addr: IpAddr,
+    port: u16,
+    multicast: bool,
+) {
     let bytesize = truncate(PathBuf::from_str(pathstr).unwrap()).unwrap();
-    new_server(listen_addr, port, PathBuf::from_str(pathstr).unwrap());
+    new_server(
+        listen_addr,
+        port,
+        PathBuf::from_str(pathstr).unwrap(),
+        multicast,
+    );
+    sleep(Duration::from_millis(20));
 
     let file = File::open(TESTDATA).expect("opening test data");
     let _ = new_client(file, target_addr, port);
-    sleep(Duration::from_millis(10));
     println!("log size: {}", bytesize);
 }
 
@@ -64,17 +81,17 @@ fn test_client_socket_stream_unicast_ipv4() {
     let listen_addr: IpAddr = Ipv4Addr::new(0, 0, 0, 0).into();
     assert!(!listen_addr.is_multicast());
     let target_addr: IpAddr = Ipv4Addr::new(127, 0, 0, 1).into();
-    test_client(pathstr, listen_addr, target_addr, 9910)
+    test_client(pathstr, listen_addr, target_addr, 9910, false)
 }
 
 #[test]
 fn test_client_socket_stream_multicast_ipv4() {
     let pathstr = "../testdata/streamoutput_client_ipv4_multicast.log";
-    let listen_addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
     let target_addr: IpAddr = Ipv4Addr::new(224, 0, 0, 110).into();
-    assert!(listen_addr.is_multicast());
+    let listen_addr = target_addr.clone();
+    //assert!(listen_addr.is_multicast());
     assert!(target_addr.is_multicast());
-    test_client(pathstr, listen_addr, target_addr, 9911)
+    test_client(pathstr, listen_addr, target_addr, 9911, true)
 }
 
 #[test]
@@ -83,7 +100,7 @@ fn test_client_socket_stream_unicast_ipv6() {
     let listen_addr: IpAddr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into();
     assert!(!listen_addr.is_multicast());
     let target_addr: IpAddr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1).into();
-    test_client(pathstr, listen_addr, target_addr, 9912)
+    test_client(pathstr, listen_addr, target_addr, 9912, false)
 }
 
 // TODO: fix multicast over ipv6
@@ -91,8 +108,9 @@ fn test_client_socket_stream_unicast_ipv6() {
 #[test]
 fn test_client_socket_stream_multicast_ipv6() {
     let pathstr = "../testdata/streamoutput_client_ipv6_multicast.log";
+    //let listen_addr: IpAddr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into();
     let addr: IpAddr = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110).into();
     assert!(addr.is_multicast());
 
-    test_client(pathstr, addr, addr, 9913)
+    test_client(pathstr, addr, addr, 9913, true)
 }

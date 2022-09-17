@@ -1,7 +1,5 @@
 use std::io;
 use std::net::SocketAddr;
-//#[cfg(debug_assertions)]
-//use std::time::Duration;
 
 use socket2::{Domain, Protocol, Socket, Type};
 
@@ -40,8 +38,9 @@ pub fn new_socket(addr: &SocketAddr) -> io::Result<Socket> {
     let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_reuse_port(true)?;
     socket.set_freebind(true)?;
-
     socket.set_read_timeout(None)?;
+    //#[cfg(debug_assertions)]
+    //use std::time::Duration;
     //#[cfg(debug_assertions)]
     //socket.set_read_timeout(Some(Duration::from_millis(100)))?;
 

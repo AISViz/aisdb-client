@@ -20,7 +20,6 @@ pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
         //socket.set_multicast_if_v4(&Ipv4Addr::new(0, 0, 0, 0))?;
         socket.set_multicast_loop_v4(true)?;
     }
-    //socket.bind(&SockAddr::from(SocketAddr::new( Ipv4Addr::new(0, 0, 0, 0).into(), 0,)))?;
     let target_addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), 0);
     bind_socket(&socket, &target_addr)?;
 
@@ -30,7 +29,7 @@ pub fn new_sender(addr: &SocketAddr) -> io::Result<UdpSocket> {
 /// new data output socket to the client IPv6 address
 /// socket will allow any downstream IP i.e. ::0
 fn new_sender_ipv6(addr: &SocketAddr, ipv6_interface: u32) -> io::Result<UdpSocket> {
-    let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0);
+    let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), addr.port());
 
     if !addr.is_ipv6() {
         panic!("invalid socket address type!")
@@ -39,10 +38,13 @@ fn new_sender_ipv6(addr: &SocketAddr, ipv6_interface: u32) -> io::Result<UdpSock
     let socket = new_socket(addr)?;
     if addr.ip().is_multicast() {
         let _a = socket.set_multicast_if_v6(ipv6_interface);
-        let _b = bind_socket(&socket, &target_addr);
+        let _b = socket.set_multicast_loop_v6(true);
+        socket.set_reuse_address(true)?;
+        let _c = bind_socket(&socket, &target_addr);
 
         assert!(_a.is_ok());
         assert!(_b.is_ok());
+        assert!(_c.is_ok());
     } else {
     }
     Ok(socket.into())
@@ -60,8 +62,16 @@ pub fn client_check_ipv6_interfaces(addr: SocketAddr) -> io::Result<UdpSocket> {
         let socket = new_sender_ipv6(&addr, i)?;
         let result = socket.send_to(b"", &addr);
         match result {
-            Ok(_r) => return Ok(socket),
-            Err(e) => eprintln!("{:?}", e),
+            Ok(_r) => {
+                //
+                #[cfg(debug_assertions)]
+                println!("opened interface {}:\t{}", i, _r);
+                return Ok(socket);
+            }
+            Err(e) => {
+                //#[cfg(debug_assertions)]
+                eprintln!("err: could not open interface {}:\t{:?}", i, e)
+            }
         }
     }
     panic!("No suitable network interfaces were found!");
