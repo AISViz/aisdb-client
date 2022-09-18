@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 
 use socket2::{Domain, Protocol, Socket, Type};
 
-/// On unix bind to the multicast address
 #[cfg(unix)]
 pub fn bind_socket(socket: &Socket, addr: &SocketAddr) -> io::Result<()> {
     socket.bind(&socket2::SockAddr::from(*addr))
@@ -11,9 +10,10 @@ pub fn bind_socket(socket: &Socket, addr: &SocketAddr) -> io::Result<()> {
 
 /// https://msdn.microsoft.com/en-us/library/windows/desktop/ms737550(v=vs.85).aspx
 #[cfg(windows)]
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr};
 #[cfg(windows)]
 pub fn bind_socket(socket: &Socket, addr: &SocketAddr) -> io::Result<()> {
+    // on windows, bind to wildcard interface (INADDR_ANY or in6addr_any)
     let addr = match addr.ip().is_multicast() {
         true => match addr {
             SocketAddr::V4(addr) => SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), addr.port()),
@@ -32,17 +32,25 @@ pub fn new_socket(addr: &SocketAddr) -> io::Result<Socket> {
     } else if addr.is_ipv6() {
         Domain::IPV6
     } else {
+        #[cfg(windows)]
+        panic!();
+        #[cfg(unix)]
         Domain::UNIX
     };
 
     let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
-    socket.set_reuse_port(true)?;
-    socket.set_freebind(true)?;
-    socket.set_read_timeout(None)?;
-    //#[cfg(debug_assertions)]
-    //use std::time::Duration;
-    //#[cfg(debug_assertions)]
-    //socket.set_read_timeout(Some(Duration::from_millis(100)))?;
 
+    #[cfg(unix)]
+    if let Err(e) = socket.set_reuse_port(true) {
+        eprintln!("could not set reusable port! are you running in WSL? {}", e);
+    }
+    #[cfg(unix)]
+    if let Err(e) = socket.set_freebind(true) {
+        eprintln!(
+            "could not set freebind socket! are you running in WSL? {}",
+            e
+        );
+    }
+    socket.set_read_timeout(None)?;
     Ok(socket)
 }

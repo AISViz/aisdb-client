@@ -1,14 +1,12 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
 #[path = "../src/bin/server.rs"]
 pub mod server;
-use server::{listener, NotifyServer};
+use server::listener;
 
 #[path = "../src/bin/client.rs"]
 pub mod client;
@@ -24,8 +22,8 @@ fn test_server_listener(
 ) {
     let addr = SocketAddr::new(addr, port);
 
-    let client_done = Arc::new(AtomicBool::new(false));
-    let _notify = NotifyServer(Arc::clone(&client_done));
+    //let client_done = Arc::new(AtomicBool::new(false));
+    //let _notify = NotifyServer(Arc::clone(&client_done));
 
     // start server
     listener(addr.to_string(), addr, logfile, multicast);

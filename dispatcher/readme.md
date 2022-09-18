@@ -15,7 +15,7 @@ Client/server application to send data from a file descriptor or socket over the
 - [X] IPv4
 - [X] IPv6
 - [X] Unix
-- [X] Windows (untested)
+- [X] Windows
 - [X] [Multicast](https://en.wikipedia.org/wiki/Multicast) IP routing
 
 
@@ -25,13 +25,13 @@ Client/server application to send data from a file descriptor or socket over the
 
 Start the logging server
 ```
-cargo run --bin server --release -- --port 9920 --client_addr 127.0.0.1 --client_addr 127.0.0.2 --path logfile.log
+cargo run --bin server --release -- --port 9920 --listen_addr 0.0.0.0 --path logfile.log
 ```
 
 ### Client
 
 Stream data from the client to the logging server:
 ```
-cargo run --bin client --release -- --port 9920 --listen_addr 0.0.0.0 --path /dev/random
+cargo run --bin client --release -- --port 9920 --path /dev/random --server_addr 127.0.0.1
 ```
 
