@@ -1,8 +1,10 @@
+use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::{stdout, Result as ioResult};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
+use std::process::exit;
 
 #[path = "../socket.rs"]
 pub mod socket;
@@ -27,7 +29,7 @@ FLAGS:
 /// command line arguments
 struct ClientArgs {
     path: PathBuf,
-    server_addr: String,
+    server_addrs: Vec<String>,
     tee: bool,
 }
 
@@ -36,17 +38,17 @@ fn parse_args() -> Result<ClientArgs, pico_args::Error> {
     let mut pargs = pico_args::Arguments::from_env();
     if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
         print!("{}", HELP);
-        std::process::exit(0);
+        exit(0);
     }
     let tee = pargs.contains(["-t", "--tee"]);
 
-    fn parse_path(s: &std::ffi::OsStr) -> Result<PathBuf, &'static str> {
+    fn parse_path(s: &OsStr) -> Result<PathBuf, &'static str> {
         Ok(s.into())
     }
 
     let args = ClientArgs {
         path: pargs.value_from_os_str("--path", parse_path)?,
-        server_addr: pargs.value_from_str("--server_addr")?,
+        server_addrs: pargs.values_from_str("--server_addr")?,
         tee,
     };
 
@@ -118,18 +120,29 @@ pub fn client_check_ipv6_interfaces(addr: &SocketAddr) -> ioResult<UdpSocket> {
     panic!("No suitable network interfaces were found!");
 }
 
-pub fn client_socket_stream(path: PathBuf, server_addr: String, tee: bool) -> ioResult<UdpSocket> {
-    let target_socket_addr: SocketAddr = server_addr.parse().expect("parsing server address");
+//pub fn client_socket_stream(path: &PathBuf, server_addr: String, tee: bool) -> ioResult<UdpSocket> {
+pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool) -> ioResult<()> {
+    //pub fn client_socket_stream(path: &PathBuf, server_addr: String, tee: bool) -> JoinHandle<()> {
 
-    let target_socket = match target_socket_addr.is_ipv4() {
-        true => new_sender(&target_socket_addr).expect("creating ipv4 send socket!"),
-        false => {
-            client_check_ipv6_interfaces(&target_socket_addr).expect("creating ipv6 send socket!")
-        }
-    };
+    let mut targets = vec![];
 
-    #[cfg(debug_assertions)]
-    println!("opening file...");
+    for server_addr in server_addrs {
+        let target_addr: SocketAddr = server_addr.parse().expect("parsing server address");
+        let target_socket = match target_addr.is_ipv4() {
+            true => new_sender(&target_addr).expect("creating ipv4 send socket!"),
+            false => {
+                client_check_ipv6_interfaces(&target_addr).expect("creating ipv6 send socket!")
+            }
+        };
+        targets.push((target_addr, target_socket));
+        println!(
+            "logging {}: listening for {}",
+            &path.as_os_str().to_str().unwrap(),
+            server_addr,
+        );
+    }
+    //#[cfg(debug_assertions)]
+    //println!("opening {:?} ...", &path);
 
     let file = OpenOptions::new()
         .create(false)
@@ -138,27 +151,34 @@ pub fn client_socket_stream(path: PathBuf, server_addr: String, tee: bool) -> io
         .open(&path)
         .unwrap_or_else(|e| panic!("opening {}, {}", path.as_os_str().to_str().unwrap(), e));
 
-    let mut output_buffer = BufWriter::new(stdout());
     let mut reader = BufReader::new(file);
     let mut buf = vec![0u8; 1024];
-    //while let Ok(_) = reader.read_exact(&mut buf) {
+    let mut output_buffer = BufWriter::new(stdout());
+
+    //Builder::new() .name(target_socket_addr.to_string()) .spawn(move || {
     while let Ok(c) = reader.read(&mut buf) {
         if c == 0 {
+            //eprintln!("encountered zero-length message!");
             break;
         }
 
         //#[cfg(debug_assertions)]
         //println!("\n{} client: {:?}", c, String::from_utf8_lossy(&buf[..c]));
+        for (target_addr, target_socket) in &targets {
+            target_socket
+                .send_to(&buf[0..c], &target_addr)
+                .expect("sending to server socket");
+        }
+        //}) .unwrap()
         if tee {
-            let o = output_buffer.write(&buf[0..c])?;
+            let o = output_buffer
+                .write(&buf[0..c])
+                .expect("writing to output buffer");
+            output_buffer.flush().unwrap();
             assert!(c == o);
         }
-
-        target_socket
-            .send_to(&buf[..c], &target_socket_addr)
-            .expect("could not send message to server socket!");
     }
-    Ok(target_socket)
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -167,9 +187,16 @@ pub fn main() {
         Ok(a) => a,
         Err(e) => {
             eprintln!("Error: {}.", e);
-            std::process::exit(1);
+            exit(1);
         }
     };
 
-    let _ = client_socket_stream(args.path, args.server_addr, args.tee);
+    //let mut threads = vec![];
+
+    //for hostname in args.server_addr {
+    //println!( "logging {}: listening for {}", &args.path.as_os_str().to_str().unwrap(), hostname);
+    //threads.push(
+    let _ = client_socket_stream(&args.path, args.server_addrs, args.tee);
+    //);
+    //}
 }

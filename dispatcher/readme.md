@@ -4,7 +4,7 @@ Client/server application to send data from a file descriptor over the network t
 ### Features
 - [X] Stream arbitrary data over the network
 - [X] Log data from multiple clients simultaneously
-- [ ] Stream to multiple logging servers simultaneously (Planned feature)
+- [X] Stream to multiple logging servers simultaneously
 - [X] Minimal (2 dependencies, compiled size ~300kb)
 - [X] Fast
 

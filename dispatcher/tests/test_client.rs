@@ -33,7 +33,7 @@ fn truncate(path: PathBuf) -> i32 {
 fn test_client(pathstr: &str, listen_addr: String, target_addr: String, tee: bool) {
     let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
     let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
-    let _c = client_socket_stream(PathBuf::from(TESTDATA), target_addr, tee);
+    let _c = client_socket_stream(&PathBuf::from(TESTDATA), vec![target_addr], tee);
     println!("log size: {}", bytesize);
     assert!(bytesize > 0);
 }
@@ -82,3 +82,22 @@ fn test_client_socket_tee() {
     let listen_addr = "0.0.0.0:9914".to_string();
     test_client(pathstr, listen_addr, target_addr, true)
 }
+
+/*
+#[test]
+fn test_client_multiple_servers() {
+    let pathstr = &[TESTINGDIR, "streamoutput_client_ipv6_unicast.log"].join(&"");
+    let listen_addr_1 = "[::]:9915".to_string();
+    let listen_addr_2 = "[::]:9916".to_string();
+
+    let target_addr_1 = "[::1]:9915".to_string();
+    let target_addr_2 = "[::1]:9916".to_string();
+    //test_client(pathstr, listen_addr, target_addr, false)
+
+    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
+    let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
+    let _c = client_socket_stream(PathBuf::from(TESTDATA), target_addr, tee);
+    println!("log size: {}", bytesize);
+    assert!(bytesize > 0);
+}
+*/

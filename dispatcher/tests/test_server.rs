@@ -60,3 +60,11 @@ fn test_server_ipv6_unicast() {
     let logfile: PathBuf = PathBuf::from_str("../testdata/streamoutput_ipv6_unicast.log").unwrap();
     test_server_listener(listen, logfile);
 }
+
+#[test]
+fn test_server_ipv6_multicast() {
+    let listen = "[ff02::1]:9903".to_string();
+    let logfile: PathBuf =
+        PathBuf::from_str("../testdata/streamoutput_ipv6_multicast.log").unwrap();
+    test_server_listener(listen, logfile);
+}

@@ -3,9 +3,10 @@ use std::io;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
+use std::process::exit;
 use std::str::FromStr;
 use std::sync::{Arc, Barrier};
-use std::thread::JoinHandle;
+use std::thread::{Builder, JoinHandle};
 
 #[path = "../socket.rs"]
 pub mod socket;
@@ -25,6 +26,28 @@ FLAGS:
   -h, --help    Prints help information
 
 "#;
+
+struct ServerArgs {
+    listen_addr: Vec<String>,
+    path: String,
+}
+
+fn parse_args() -> Result<ServerArgs, pico_args::Error> {
+    let mut pargs = pico_args::Arguments::from_env();
+    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
+        print!("{}", HELP);
+        exit(0);
+    }
+    let args = ServerArgs {
+        path: pargs.value_from_str("--path")?,
+        listen_addr: pargs.values_from_str("--listen_addr")?,
+    };
+    if args.listen_addr.is_empty() {
+        eprintln!("Error: the --listen_addr option must be set. Must provide atleast one client IP address");
+    };
+
+    Ok(args)
+}
 
 /// server: client socket handler
 /// binds a new socket connection on the network multicast channel
@@ -112,7 +135,7 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
             Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", addr, e),
         }},
     };
-    let join_handle = std::thread::Builder::new()
+    let join_handle = Builder::new()
         .name(format!("{}:server", addr))
         .spawn(move || {
             #[cfg(debug_assertions)]
@@ -169,35 +192,13 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
     join_handle
 }
 
-struct ServerArgs {
-    listen_addr: Vec<String>,
-    path: String,
-}
-
-fn parse_args() -> Result<ServerArgs, pico_args::Error> {
-    let mut pargs = pico_args::Arguments::from_env();
-    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
-        print!("{}", HELP);
-        std::process::exit(0);
-    }
-    let args = ServerArgs {
-        path: pargs.value_from_str("--path")?,
-        listen_addr: pargs.values_from_str("--listen_addr")?,
-    };
-    if args.listen_addr.is_empty() {
-        eprintln!("Error: the --listen_addr option must be set. Must provide atleast one client IP address");
-    };
-
-    Ok(args)
-}
-
 #[allow(dead_code)]
 pub fn main() {
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
             eprintln!("Error: {}.", e);
-            std::process::exit(1);
+            exit(1);
         }
     };
 
