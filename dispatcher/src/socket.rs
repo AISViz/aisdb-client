@@ -13,7 +13,6 @@ pub fn bind_socket(socket: &Socket, addr: &SocketAddr) -> io::Result<()> {
 use std::net::{Ipv4Addr, Ipv6Addr};
 #[cfg(windows)]
 pub fn bind_socket(socket: &Socket, addr: &SocketAddr) -> io::Result<()> {
-    // on windows, bind to wildcard interface (INADDR_ANY or in6addr_any)
     let addr = match addr.ip().is_multicast() {
         true => match addr {
             SocketAddr::V4(addr) => SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), addr.port()),
