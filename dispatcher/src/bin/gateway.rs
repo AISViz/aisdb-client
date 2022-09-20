@@ -2,7 +2,7 @@ use std::io::stdout;
 use std::io::{BufWriter, Write};
 use std::net::SocketAddr;
 use std::process::exit;
-use std::thread::{Builder, JoinHandle};
+//use std::thread::{Builder, JoinHandle};
 
 #[path = "./client.rs"]
 pub mod client;
@@ -50,7 +50,7 @@ fn parse_args() -> Result<GatewayArgs, pico_args::Error> {
     Ok(args)
 }
 
-pub fn gateway(server_addrs: Vec<String>, listen_addr: String, tee: bool) -> JoinHandle<()> {
+pub fn gateway(server_addrs: Vec<String>, listen_addr: String, tee: bool) {
     let mut targets = vec![];
 
     for server_addr in server_addrs {
@@ -78,39 +78,42 @@ pub fn gateway(server_addrs: Vec<String>, listen_addr: String, tee: bool) -> Joi
     };
 
     let mut output_buffer = BufWriter::new(stdout());
-
+    /*
     Builder::new()
         .name(format!("{}", addr))
         .spawn(move || {
-            let mut buf = [0u8; 1024]; // receive buffer
-            loop {
-                match listen_socket.recv_from(&mut buf[0..]) {
-                    Ok((c, _remote_addr)) => {
-                        for (target_addr, target_socket) in &targets {
-                            target_socket
-                                .send_to(&buf[0..c], &target_addr)
-                                .expect("sending to server socket");
-                            if tee {
-                                let o = output_buffer
-                                    .write(&buf[0..c])
-                                    .expect("writing to output buffer");
-                                output_buffer.flush().unwrap();
-                                assert!(c == o);
-                            }
-                        }
-                    }
-                    Err(err) => {
+        */
+    let mut buf = [0u8; 1024]; // receive buffer
+    loop {
+        match listen_socket.recv_from(&mut buf[0..]) {
+            Ok((c, _remote_addr)) => {
+                for (target_addr, target_socket) in &targets {
+                    target_socket
+                        .send_to(&buf[0..c], &target_addr)
+                        .expect("sending to server socket");
+                    if tee {
+                        let o = output_buffer
+                            .write(&buf[0..c])
+                            .expect("writing to output buffer");
                         output_buffer.flush().unwrap();
-                        eprintln!("{}:server: got an error: {}", addr, err);
-                        #[cfg(debug_assertions)]
-                        panic!("{}:server: got an error: {}", addr, err);
+                        assert!(c == o);
                     }
                 }
             }
-        })
-        .unwrap()
-        .join()
-        .unwrap()
+            Err(err) => {
+                output_buffer.flush().unwrap();
+                eprintln!("{}:server: got an error: {}", addr, err);
+                #[cfg(debug_assertions)]
+                panic!("{}:server: got an error: {}", addr, err);
+            }
+        }
+    }
+    /*
+    })
+    .unwrap()
+    .join()
+    .unwrap()
+    */
 }
 
 pub fn main() {
