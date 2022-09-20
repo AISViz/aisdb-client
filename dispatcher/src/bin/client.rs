@@ -76,7 +76,8 @@ pub fn new_sender(addr: &SocketAddr) -> ioResult<UdpSocket> {
 /// new data output socket to the client IPv6 address
 /// socket will allow any downstream IP i.e. ::0
 fn new_sender_ipv6(addr: &SocketAddr, ipv6_interface: u32) -> ioResult<UdpSocket> {
-    let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), addr.port());
+    //let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), addr.port());
+    let target_addr = SocketAddr::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0).into(), 0);
 
     if !addr.is_ipv6() {
         panic!("invalid socket address type!")
@@ -155,21 +156,17 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
     let mut buf = vec![0u8; 1024];
     let mut output_buffer = BufWriter::new(stdout());
 
-    //Builder::new() .name(target_socket_addr.to_string()) .spawn(move || {
     while let Ok(c) = reader.read(&mut buf) {
         if c == 0 {
-            //eprintln!("encountered zero-length message!");
+            eprintln!("encountered zero-length message!");
             break;
         }
 
-        //#[cfg(debug_assertions)]
-        //println!("\n{} client: {:?}", c, String::from_utf8_lossy(&buf[..c]));
         for (target_addr, target_socket) in &targets {
             target_socket
                 .send_to(&buf[0..c], &target_addr)
                 .expect("sending to server socket");
         }
-        //}) .unwrap()
         if tee {
             let o = output_buffer
                 .write(&buf[0..c])
@@ -181,7 +178,6 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn main() {
     let args = match parse_args() {
         Ok(a) => a,
@@ -190,13 +186,5 @@ pub fn main() {
             exit(1);
         }
     };
-
-    //let mut threads = vec![];
-
-    //for hostname in args.server_addr {
-    //println!( "logging {}: listening for {}", &args.path.as_os_str().to_str().unwrap(), hostname);
-    //threads.push(
     let _ = client_socket_stream(&args.path, args.server_addrs, args.tee);
-    //);
-    //}
 }

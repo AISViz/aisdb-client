@@ -11,6 +11,9 @@ name = "client"
 [[bin]]
 name = "server"
 
+[[bin]]
+name = "gateway"
+
 
 [dependencies]
 socket2 = { version = "0.4.7", features = ["all"] }

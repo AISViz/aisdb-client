@@ -23,7 +23,7 @@ Client/server application to send data from a file descriptor over the network t
 
 Start the logging server
 ```
-cargo run --bin server --release -- --listen_addr 0.0.0.0:9920 --path logfile.log
+cargo run --bin server --release -- --path logfile.log --listen_addr '0.0.0.0:9920' --listen_addr '[::]:9921'
 ```
 
 ### Client
@@ -31,7 +31,7 @@ cargo run --bin server --release -- --listen_addr 0.0.0.0:9920 --path logfile.lo
 Stream data from the client to the logging server
 
 ```
-cargo run --bin client --release -- --path /dev/random --server_addr 127.0.0.1:9920 --server_addr [::1]:9921
+cargo run --bin client --release -- --path /dev/random --server_addr '127.0.0.1:9920' --server_addr '[::1]:9921'
 ```
 
 

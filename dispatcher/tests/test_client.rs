@@ -1,12 +1,10 @@
-use std::fs::{File, OpenOptions};
-use std::io::Read;
-use std::path::{Path, PathBuf};
+#![feature(ip)]
+
+use std::fs::File;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
-
-#[cfg(unix)]
-use std::os::unix::net::UnixListener;
 
 #[path = "../src/bin/client.rs"]
 mod client;
@@ -16,7 +14,13 @@ use client::client_socket_stream;
 mod server;
 use server::listener;
 
+//const TESTDATA: &str = "./tests/test_data_20211101.nm4";
+//const TESTDATA: &str = "./tests/test_data_random.bin";
+const TESTDATA: &str = "./readme.md";
+const TESTINGDIR: &str = "./tests/";
+
 fn truncate(path: PathBuf) -> i32 {
+    sleep(Duration::from_millis(15));
     let info = match File::open(&path) {
         Ok(f) => f.metadata().unwrap().len(),
         Err(e) => {
@@ -26,22 +30,16 @@ fn truncate(path: PathBuf) -> i32 {
     };
 
     File::create(&path).expect("creating file");
-    sleep(Duration::from_millis(15));
     info.try_into().unwrap()
 }
 
 fn test_client(pathstr: &str, listen_addr: String, target_addr: String, tee: bool) {
-    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
     let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
     let _c = client_socket_stream(&PathBuf::from(TESTDATA), vec![target_addr], tee);
+    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
     println!("log size: {}", bytesize);
     assert!(bytesize > 0);
 }
-
-//const TESTDATA: &str = "./tests/test_data_20211101.nm4";
-//const TESTDATA: &str = "./tests/test_data_random.bin";
-const TESTDATA: &str = "./readme.md";
-const TESTINGDIR: &str = "./tests/";
 
 #[test]
 fn test_client_socket_stream_unicast_ipv4() {
@@ -83,21 +81,27 @@ fn test_client_socket_tee() {
     test_client(pathstr, listen_addr, target_addr, true)
 }
 
-/*
 #[test]
 fn test_client_multiple_servers() {
-    let pathstr = &[TESTINGDIR, "streamoutput_client_ipv6_unicast.log"].join(&"");
+    let pathstr_1 = &[TESTINGDIR, "streamoutput_client_ipv6_multiplex_1.log"].join(&"");
+    let pathstr_2 = &[TESTINGDIR, "streamoutput_client_ipv6_multiplex_2.log"].join(&"");
     let listen_addr_1 = "[::]:9915".to_string();
     let listen_addr_2 = "[::]:9916".to_string();
-
     let target_addr_1 = "[::1]:9915".to_string();
     let target_addr_2 = "[::1]:9916".to_string();
     //test_client(pathstr, listen_addr, target_addr, false)
 
-    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
-    let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
-    let _c = client_socket_stream(PathBuf::from(TESTDATA), target_addr, tee);
-    println!("log size: {}", bytesize);
-    assert!(bytesize > 0);
+    let bytesize_1 = truncate(PathBuf::from_str(pathstr_1).unwrap());
+    let bytesize_2 = truncate(PathBuf::from_str(pathstr_2).unwrap());
+    let _l1 = listener(listen_addr_1, PathBuf::from_str(pathstr_1).unwrap());
+    let _l2 = listener(listen_addr_2, PathBuf::from_str(pathstr_2).unwrap());
+    let _c = client_socket_stream(
+        &PathBuf::from(TESTDATA),
+        vec![target_addr_1, target_addr_2],
+        false,
+    );
+    println!("log sizes: {}, {}", bytesize_1, bytesize_2);
+    assert!(bytesize_1 > 0);
+    assert!(bytesize_2 > 0);
+    assert!(bytesize_1 == bytesize_2);
 }
-*/

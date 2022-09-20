@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
-use std::sync::{Arc, Barrier};
+//use std::sync::{Arc, Barrier};
 use std::thread::{Builder, JoinHandle};
 
 #[path = "../socket.rs"]
@@ -51,7 +51,7 @@ fn parse_args() -> Result<ServerArgs, pico_args::Error> {
 
 /// server: client socket handler
 /// binds a new socket connection on the network multicast channel
-fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
+pub fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
     // https://bluejekyll.github.io/blog/posts/multicasting-in-rust/
     #[cfg(debug_assertions)]
     println!("server broadcasting to: {}", addr.ip());
@@ -68,8 +68,6 @@ fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
             Ok(socket.into())
         }
         IpAddr::V6(ref mdns_v6) => {
-            #[cfg(debug_assertions)]
-            println!("mdns_v6: {}", mdns_v6);
             let socket = match new_socket(&addr) {
                 Ok(s) => s,
                 Err(e) => panic!("creating new socket {}", e),
@@ -108,8 +106,8 @@ pub fn join_unicast(addr: SocketAddr) -> io::Result<UdpSocket> {
 /// server socket listener
 pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
     // A barrier to not start the client test code until after the server is running
-    let upstream_barrier = Arc::new(Barrier::new(2));
-    let downstream_barrier = Arc::clone(&upstream_barrier);
+    //let upstream_barrier = Arc::new(Barrier::new(2));
+    //let downstream_barrier = Arc::clone(&upstream_barrier);
 
     let addr: SocketAddr = addr
         .parse()
@@ -120,6 +118,7 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
         .write(true)
         .append(true)
         .open(&logfile);
+
     let mut writer = match file {
         Ok(f) => f,
         Err(e) => {
@@ -142,7 +141,7 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
             println!("{}:server: joined", addr);
 
             //#[cfg(test)]
-            upstream_barrier.wait();
+            //upstream_barrier.wait();
 
             #[cfg(debug_assertions)]
             println!("{}:server: is ready", addr);
@@ -186,13 +185,10 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
         })
         .unwrap();
 
-    downstream_barrier.wait();
-    #[cfg(debug_assertions)]
-    println!("server: complete");
+    //downstream_barrier.wait();
     join_handle
 }
 
-#[allow(dead_code)]
 pub fn main() {
     let args = match parse_args() {
         Ok(a) => a,
@@ -208,7 +204,7 @@ pub fn main() {
 
     for hostname in args.listen_addr {
         // if listening to multiple clients at once, log each client to a
-        // separate file, with the client IP appended to the filename
+        // separate file, with the client address appended to the filename
         let mut logpath: String = "".to_owned();
         logpath.push_str(&args.path);
         if append_listen_addr {

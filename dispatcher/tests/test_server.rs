@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+#![feature(ip)]
+
+use std::fs::File;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::thread::sleep;
@@ -10,7 +13,7 @@ use server::listener;
 
 #[path = "../src/bin/client.rs"]
 pub mod client;
-use client::{client_check_ipv6_interfaces, new_sender};
+use client::{client_check_ipv6_interfaces, client_socket_stream, new_sender};
 
 /// Our generic test over different IPs
 fn test_server_listener(addr: String, logfile: PathBuf) {
@@ -67,4 +70,32 @@ fn test_server_ipv6_multicast() {
     let logfile: PathBuf =
         PathBuf::from_str("../testdata/streamoutput_ipv6_multicast.log").unwrap();
     test_server_listener(listen, logfile);
+}
+
+#[test]
+fn test_server_multiple_clients_single_channel() {
+    let pathstr_1 = "../testdata/streamoutput_client_ipv6_multiclient_samefile.log";
+    File::create(&pathstr_1).expect("truncating file");
+    sleep(Duration::from_millis(15));
+    let listen_addr_1 = "[::]:9917".to_string();
+    let target_addr_1 = "[::1]:9917".to_string();
+    let target_addr_2 = "[::1]:9917".to_string();
+    let _l = listener(listen_addr_1, PathBuf::from_str(pathstr_1).unwrap());
+    let _c1 = client_socket_stream(&PathBuf::from("./Cargo.toml"), vec![target_addr_1], false);
+    let _c2 = client_socket_stream(&PathBuf::from("./Cargo.lock"), vec![target_addr_2], false);
+}
+
+#[test]
+fn test_server_multiple_clients_dual_channel() {
+    let pathstr_1 = "../testdata/streamoutput_client_ipv6_multiclient_different_channels.log";
+    File::create(&pathstr_1).expect("truncating file");
+    sleep(Duration::from_millis(15));
+    let listen_addr_1 = "[::]:9917".to_string();
+    let listen_addr_2 = "[::]:9918".to_string();
+    let target_addr_1 = "[::1]:9917".to_string();
+    let target_addr_2 = "[::1]:9918".to_string();
+    let _l1 = listener(listen_addr_1, PathBuf::from_str(pathstr_1).unwrap());
+    let _l2 = listener(listen_addr_2, PathBuf::from_str(pathstr_1).unwrap());
+    let _c1 = client_socket_stream(&PathBuf::from("./Cargo.toml"), vec![target_addr_1], false);
+    let _c2 = client_socket_stream(&PathBuf::from("./Cargo.lock"), vec![target_addr_2], false);
 }
