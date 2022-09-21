@@ -1,5 +1,3 @@
-#![feature(ip)]
-
 use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -16,10 +14,10 @@ use server::listener;
 
 //const TESTDATA: &str = "./tests/test_data_20211101.nm4";
 //const TESTDATA: &str = "./tests/test_data_random.bin";
-const TESTDATA: &str = "./readme.md";
-const TESTINGDIR: &str = "./tests/";
+pub const TESTDATA: &str = "./readme.md";
+pub const TESTINGDIR: &str = "./tests/";
 
-fn truncate(path: PathBuf) -> i32 {
+pub fn truncate(path: PathBuf) -> i32 {
     sleep(Duration::from_millis(15));
     let info = match File::open(&path) {
         Ok(f) => f.metadata().unwrap().len(),

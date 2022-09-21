@@ -12,7 +12,7 @@ name = "client"
 name = "server"
 
 [[bin]]
-name = "gateway"
+name = "proxy"
 
 
 [dependencies]

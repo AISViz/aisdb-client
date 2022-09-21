@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::{stdout, Result as ioResult};
 use std::io::{BufReader, BufWriter, Read, Write};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -121,20 +121,22 @@ pub fn client_check_ipv6_interfaces(addr: &SocketAddr) -> ioResult<UdpSocket> {
     panic!("No suitable network interfaces were found!");
 }
 
-//pub fn client_socket_stream(path: &PathBuf, server_addr: String, tee: bool) -> ioResult<UdpSocket> {
 pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool) -> ioResult<()> {
-    //pub fn client_socket_stream(path: &PathBuf, server_addr: String, tee: bool) -> JoinHandle<()> {
-
     let mut targets = vec![];
 
     for server_addr in server_addrs {
-        let target_addr: SocketAddr = server_addr.parse().expect("parsing server address");
+        let target_addr = server_addr
+            .to_socket_addrs()
+            .unwrap()
+            .next()
+            .expect("parsing server address");
         let target_socket = match target_addr.is_ipv4() {
             true => new_sender(&target_addr).expect("creating ipv4 send socket!"),
             false => {
                 client_check_ipv6_interfaces(&target_addr).expect("creating ipv6 send socket!")
             }
         };
+        target_socket.set_broadcast(true)?;
         targets.push((target_addr, target_socket));
         println!(
             "logging {}: listening for {}",
@@ -142,8 +144,6 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
             server_addr,
         );
     }
-    //#[cfg(debug_assertions)]
-    //println!("opening {:?} ...", &path);
 
     let file = OpenOptions::new()
         .create(false)
@@ -158,7 +158,10 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
 
     while let Ok(c) = reader.read(&mut buf) {
         if c == 0 {
-            eprintln!("encountered zero-length message!");
+            eprintln!(
+                "\nclient: encountered EOF in {}, exiting...",
+                &path.display(),
+            );
             break;
         }
 
@@ -171,10 +174,11 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
             let o = output_buffer
                 .write(&buf[0..c])
                 .expect("writing to output buffer");
-            output_buffer.flush().unwrap();
+            #[cfg(debug_assertions)]
             assert!(c == o);
         }
     }
+    output_buffer.flush().unwrap();
     Ok(())
 }
 

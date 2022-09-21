@@ -1,7 +1,7 @@
 use std::fs::OpenOptions;
 use std::io;
-use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::io::{BufWriter, Write};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
@@ -84,12 +84,11 @@ pub fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
 
             let listenaddr = SocketAddr::new(
                 IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
-                //IpAddr::V6(Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0110)),
                 addr.port(),
             );
             let bind_result = bind_socket(&socket, &listenaddr);
             if bind_result.is_err() {
-                panic!("binding to {:?}  {:?}", listenaddr, bind_result);
+                panic!("binding to {:?}: {:?}", listenaddr, bind_result);
             }
 
             Ok(socket.into())
@@ -105,28 +104,19 @@ pub fn join_unicast(addr: SocketAddr) -> io::Result<UdpSocket> {
 
 /// server socket listener
 pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
-    // A barrier to not start the client test code until after the server is running
-    //let upstream_barrier = Arc::new(Barrier::new(2));
-    //let downstream_barrier = Arc::clone(&upstream_barrier);
-
-    let addr: SocketAddr = addr
-        .parse()
-        .unwrap_or_else(|e| panic!("parsing socket address '{}' {}", addr, e));
+    let addr = addr
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .expect("parsing socket address");
 
     let file = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
         .open(&logfile);
+    let mut writer = BufWriter::new(file.unwrap());
 
-    let mut writer = match file {
-        Ok(f) => f,
-        Err(e) => {
-            panic!("{:?}: {}", &logfile, e);
-        }
-    };
-    //let mut writer = BufWriter::with_capacity(1024, file);
-    //let listen_socket = match addr.ip().is_multicast() || multicast {
     let listen_socket = match addr.ip().is_multicast() {
         false => join_unicast(addr).expect("failed to create socket listener!"),
         true => {match join_multicast(addr) {
@@ -137,15 +127,6 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
     let join_handle = Builder::new()
         .name(format!("{}:server", addr))
         .spawn(move || {
-            #[cfg(debug_assertions)]
-            println!("{}:server: joined", addr);
-
-            //#[cfg(test)]
-            //upstream_barrier.wait();
-
-            #[cfg(debug_assertions)]
-            println!("{}:server: is ready", addr);
-
             let mut buf = [0u8; 1024]; // receive buffer
             loop {
                 match listen_socket.recv_from(&mut buf[0..]) {
@@ -181,6 +162,7 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
                         panic!("{}:server: got an error: {}", addr, err);
                     }
                 }
+                writer.flush().unwrap();
             }
         })
         .unwrap();

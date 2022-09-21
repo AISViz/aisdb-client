@@ -1,5 +1,3 @@
-#![feature(ip)]
-
 use std::fs::File;
 use std::net::SocketAddr;
 use std::path::PathBuf;
