@@ -158,7 +158,8 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
 
     while let Ok(c) = reader.read(&mut buf) {
         if c == 0 {
-            eprintln!(
+            #[cfg(debug_assertions)]
+            println!(
                 "\nclient: encountered EOF in {}, exiting...",
                 &path.display(),
             );
