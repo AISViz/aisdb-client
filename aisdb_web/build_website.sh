@@ -5,7 +5,7 @@ PKGDIR="${ROOTDIR}/aisdb"
 RSTSOURCEDIR="${ROOTDIR}/docs/source"
 MAPDIR="${ROOTDIR}/aisdb_web/map"
 SPHINXDIR="${ROOTDIR}/aisdb_web/dist_sphinx"
-WASMDIR="${ROOTDIR}/aisdb_wasm"
+WASMDIR="${ROOTDIR}/aisdb_web/client_webassembly"
 
 set -e
 
