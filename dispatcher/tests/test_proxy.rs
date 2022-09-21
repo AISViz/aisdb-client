@@ -30,7 +30,6 @@ fn test_proxy_thread_ipv4() {
 
     let data = PathBuf::from(TESTDATA);
     let pathstr = &[TESTINGDIR, "streamoutput_proxy_thread_ipv4_output.log"].join(&"");
-    println!("{}", pathstr);
     let output = PathBuf::from(pathstr);
     assert!(data.is_file());
 

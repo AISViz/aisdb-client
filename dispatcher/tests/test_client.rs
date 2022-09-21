@@ -1,8 +1,9 @@
-use std::fs::File;
+use std::fs::{metadata, File};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::thread::sleep;
-use std::time::Duration;
+use std::thread::{Builder, JoinHandle};
+use std::time::{Duration, SystemTime};
 
 #[path = "../src/bin/client.rs"]
 mod client;
@@ -27,8 +28,9 @@ pub fn truncate(path: PathBuf) -> i32 {
         }
     };
 
+    let i = info.try_into().unwrap();
     File::create(&path).expect("creating file");
-    info.try_into().unwrap()
+    i
 }
 
 fn test_client(pathstr: &str, listen_addr: String, target_addr: String, tee: bool) {
@@ -102,4 +104,39 @@ fn test_client_multiple_servers() {
     assert!(bytesize_1 > 0);
     assert!(bytesize_2 > 0);
     assert!(bytesize_1 == bytesize_2);
+}
+
+#[cfg(unix)]
+#[cfg(not(debug_assertions))]
+#[test]
+fn test_client_bitrate() {
+    let pathstr = &[TESTINGDIR, "streamoutput_client_test_largefile.log"].join(&"");
+    truncate(PathBuf::from_str(pathstr).unwrap());
+    let target_addr = "127.0.0.1:9917".to_string();
+    let listen_addr = "0.0.0.0:9917".to_string();
+
+    let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
+    let _c = Builder::new().spawn(move || {
+        client_socket_stream(&PathBuf::from("/dev/random"), vec![target_addr], false)
+    });
+    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
+
+    let now = SystemTime::now();
+    let s = 2;
+    let then = Duration::from_secs(s);
+
+    while SystemTime::now() < now + then {
+        sleep(Duration::from_millis(50));
+    }
+
+    let info = match File::open(&pathstr) {
+        Ok(f) => f.metadata().unwrap().len(),
+        Err(e) => {
+            eprintln!("{}", e);
+            0
+        }
+    };
+    println!("log size: {}\tbitrate: {} Mbps", info, info / s / 1000000);
+    truncate(PathBuf::from_str(pathstr).unwrap());
+    assert!(bytesize > 0);
 }

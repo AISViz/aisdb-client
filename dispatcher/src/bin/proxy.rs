@@ -108,7 +108,7 @@ pub fn proxy_thread(
         .unwrap()
 }
 
-pub fn gateway(downstream_addrs: &Vec<String>, listen_addrs: &Vec<String>, tee: bool) {
+pub fn gateway(downstream_addrs: &[String], listen_addrs: &Vec<String>, tee: bool) {
     let mut threads = vec![];
     for listen_addr in listen_addrs {
         let addr = listen_addr
