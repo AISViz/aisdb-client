@@ -46,6 +46,6 @@ Options `--listen_addr` and `--downstream_addr` may be repeated for multiple end
 The `--tee` or `-t` flag may be passed to copy input to stdout
 
 ```
-cargo run --bin proxy --release  -- --listen_addr [SOCKET_ADDR] --downstream_addr [SOCKET_ADDR]
+cargo run --bin proxy --release  -- --listen_addr [::]9921 --downstream_addr [::2]9922 --tee 
 ```
 
