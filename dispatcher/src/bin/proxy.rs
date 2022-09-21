@@ -52,12 +52,12 @@ fn parse_args() -> Result<GatewayArgs, pico_args::Error> {
 
 pub fn proxy_thread(
     listen_socket: UdpSocket,
-    downstream_addrs: &Vec<String>,
+    downstream_addrs: &[String],
     tee: bool,
 ) -> JoinHandle<()> {
     let mut output_buffer = BufWriter::new(stdout());
     let targets: Vec<(SocketAddr, UdpSocket)> = downstream_addrs
-        .into_iter()
+        .iter()
         .map(|a| {
             let addr = a
                 .to_socket_addrs()
@@ -88,11 +88,11 @@ pub fn proxy_thread(
                                 .expect("sending to server socket");
                         }
                         if tee {
-                            let o = output_buffer
+                            let _o = output_buffer
                                 .write(&buf[0..c])
                                 .expect("writing to output buffer");
                             #[cfg(debug_assertions)]
-                            assert!(c == o);
+                            assert!(c == _o);
                         }
                     }
                     Err(err) => {
@@ -145,11 +145,5 @@ pub fn main() {
         }
     };
 
-    let mut threads = vec![];
-
-    let _ = threads.push(gateway(
-        &args.downstream_addrs,
-        &args.listen_addrs,
-        args.tee,
-    ));
+    gateway(&args.downstream_addrs, &args.listen_addrs, args.tee);
 }

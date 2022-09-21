@@ -171,11 +171,11 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
                 .expect("sending to server socket");
         }
         if tee {
-            let o = output_buffer
+            let _o = output_buffer
                 .write(&buf[0..c])
                 .expect("writing to output buffer");
             #[cfg(debug_assertions)]
-            assert!(c == o);
+            assert!(c == _o);
         }
     }
     output_buffer.flush().unwrap();
