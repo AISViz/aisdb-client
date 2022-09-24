@@ -1,9 +1,11 @@
-use std::fs::{metadata, File};
+use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::thread::sleep;
-use std::thread::{Builder, JoinHandle};
-use std::time::{Duration, SystemTime};
+use std::thread::{sleep, Builder};
+#[cfg(not(debug_assertions))]
+#[cfg(unix)]
+use std::time::SystemTime;
+use std::time::{Duration, Instant};
 
 #[path = "../src/bin/client.rs"]
 mod client;
@@ -28,7 +30,7 @@ pub fn truncate(path: PathBuf) -> i32 {
         }
     };
 
-    let i = info.try_into().unwrap();
+    let i = info as i32;
     File::create(&path).expect("creating file");
     i
 }
@@ -107,7 +109,7 @@ fn test_client_multiple_servers() {
 }
 
 #[cfg(unix)]
-#[cfg(not(debug_assertions))]
+//#[cfg(not(debug_assertions))]
 #[test]
 fn test_client_bitrate() {
     let pathstr = &[TESTINGDIR, "streamoutput_client_test_largefile.log"].join(&"");
@@ -121,13 +123,12 @@ fn test_client_bitrate() {
     });
     let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
 
-    let now = SystemTime::now();
-    let s = 2;
-    let then = Duration::from_secs(s);
+    let start = Instant::now();
 
-    while SystemTime::now() < now + then {
-        sleep(Duration::from_millis(50));
+    while start.elapsed().as_secs() < 2 {
+        sleep(Duration::from_millis(25));
     }
+    let elapsed = start.elapsed();
 
     let info = match File::open(&pathstr) {
         Ok(f) => f.metadata().unwrap().len(),
@@ -136,7 +137,12 @@ fn test_client_bitrate() {
             0
         }
     };
-    println!("log size: {}\tbitrate: {} Mbps", info, info / s / 1000000);
+    println!(
+        "log size: {}  elapsed: {:.3}s\tbitrate: {:.1} Mbps",
+        info,
+        elapsed.as_secs_f32(),
+        info / elapsed.as_secs() / 1000000
+    );
     truncate(PathBuf::from_str(pathstr).unwrap());
     assert!(bytesize > 0);
 }

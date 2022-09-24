@@ -6,6 +6,9 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::exit;
 
+extern crate pico_args;
+use pico_args::Arguments;
+
 #[path = "../socket.rs"]
 pub mod socket;
 use socket::{bind_socket, new_socket};
@@ -35,7 +38,7 @@ struct ClientArgs {
 
 /// retrieve command line arguments as ClientArgs struct
 fn parse_args() -> Result<ClientArgs, pico_args::Error> {
-    let mut pargs = pico_args::Arguments::from_env();
+    let mut pargs = Arguments::from_env();
     if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
         print!("{}", HELP);
         exit(0);
@@ -51,6 +54,10 @@ fn parse_args() -> Result<ClientArgs, pico_args::Error> {
         server_addrs: pargs.values_from_str("--server_addr")?,
         tee,
     };
+    let remaining = pargs.finish();
+    if !remaining.is_empty() {
+        println!("Warning: unused arguments {:?}", remaining)
+    }
 
     Ok(args)
 }
@@ -153,7 +160,8 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
         .unwrap_or_else(|e| panic!("opening {}, {}", path.as_os_str().to_str().unwrap(), e));
 
     let mut reader = BufReader::new(file);
-    let mut buf = vec![0u8; 1024];
+    //let mut buf = vec![0u8; 1024];
+    let mut buf = vec![0u8; 16384];
     let mut output_buffer = BufWriter::new(stdout());
 
     while let Ok(c) = reader.read(&mut buf) {

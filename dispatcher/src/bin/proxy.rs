@@ -1,8 +1,12 @@
-use std::io::stdout;
-use std::io::{BufWriter, Write};
+use std::io::{stdout, BufWriter, Write};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::process::exit;
 use std::thread::{Builder, JoinHandle};
+//use std::thread::sleep;
+//use std::time::Duration;
+
+extern crate pico_args;
+use pico_args::Arguments;
 
 #[path = "./client.rs"]
 pub mod client;
@@ -13,13 +17,15 @@ pub mod server;
 use server::{join_multicast, join_unicast};
 
 const HELP: &str = r#"
-DISPATCH: GATEWAY
+DISPATCH: proxy 
 
 USAGE:
-  gateway --listen_addr [SOCKET_ADDR] --downstream_addr [SOCKET_ADDR] ...
+  proxy --listen_addr [LOCAL_ADDRESS:PORT] --downstream_addr [HOSTNAME:PORT] ...
 
+  either --listen_addr or --downstream_addr may be repeated
   e.g.
-  gateway --listen_addr 0.0.0.0:9920 --downstream_addr [::1]:9921 --tee
+  proxy --listen_addr '0.0.0.0:9920' --downstream_addr '[::1]:9921' --downstream_addr 'localhost:9922' --tee
+
 
 FLAGS:
   -h, --help    Prints help information
@@ -34,7 +40,7 @@ pub struct GatewayArgs {
 }
 
 fn parse_args() -> Result<GatewayArgs, pico_args::Error> {
-    let mut pargs = pico_args::Arguments::from_env();
+    let mut pargs = Arguments::from_env();
     if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
         print!("{}", HELP);
         exit(0);
@@ -46,15 +52,32 @@ fn parse_args() -> Result<GatewayArgs, pico_args::Error> {
         downstream_addrs: pargs.values_from_str("--downstream_addr")?,
         tee,
     };
+    let remaining = pargs.finish();
+    if !remaining.is_empty() {
+        println!("Warning: unused arguments {:?}", remaining)
+    }
 
     Ok(args)
 }
 
 pub fn proxy_thread(
-    listen_socket: UdpSocket,
+    listen_addr: &String,
     downstream_addrs: &[String],
     tee: bool,
 ) -> JoinHandle<()> {
+    let addr = listen_addr
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .expect("parsing socket address");
+    let listen_socket = match addr.ip().is_multicast() {
+            false => join_unicast(addr).expect("failed to create socket listener!"),
+            true => {match join_multicast(addr) {
+                Ok(s) => s,
+                Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", addr, e),
+            }
+            },
+        };
     let mut output_buffer = BufWriter::new(stdout());
     let targets: Vec<(SocketAddr, UdpSocket)> = downstream_addrs
         .iter()
@@ -108,32 +131,21 @@ pub fn proxy_thread(
         .unwrap()
 }
 
-pub fn gateway(downstream_addrs: &[String], listen_addrs: &Vec<String>, tee: bool) {
-    let mut threads = vec![];
+pub fn proxy_gateway(
+    downstream_addrs: &[String],
+    listen_addrs: &[String],
+    tee: bool,
+) -> Vec<JoinHandle<()>> {
+    let mut threads: Vec<JoinHandle<()>> = vec![];
     for listen_addr in listen_addrs {
-        let addr = listen_addr
-            .to_socket_addrs()
-            .unwrap()
-            .next()
-            .expect("parsing socket address");
-        let listen_socket = match addr.ip().is_multicast() {
-            false => join_unicast(addr).expect("failed to create socket listener!"),
-            true => {match join_multicast(addr) {
-                Ok(s) => s,
-                Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", addr, e),
-            }
-            },
-        };
         #[cfg(debug_assertions)]
         println!(
             "proxy: forwarding {:?} -> {:?}",
-            listen_socket, downstream_addrs
+            listen_addr, downstream_addrs
         );
-        threads.push(proxy_thread(listen_socket, downstream_addrs, tee));
+        threads.push(proxy_thread(listen_addr, downstream_addrs, tee));
     }
-    for thread in threads {
-        thread.join().unwrap();
-    }
+    threads
 }
 
 pub fn main() {
@@ -145,5 +157,7 @@ pub fn main() {
         }
     };
 
-    gateway(&args.downstream_addrs, &args.listen_addrs, args.tee);
+    for thread in proxy_gateway(&args.downstream_addrs, &args.listen_addrs, args.tee) {
+        thread.join().unwrap();
+    }
 }

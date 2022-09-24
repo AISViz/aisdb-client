@@ -1,20 +1,19 @@
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 
 #[path = "../src/bin/proxy.rs"]
 pub mod proxy;
-use proxy::{gateway, proxy_thread, GatewayArgs};
+use proxy::{proxy_gateway, proxy_thread};
 
 #[path = "../src/bin/server.rs"]
 pub mod server;
-use server::{join_multicast, join_unicast, listener};
+use server::listener;
 
 #[path = "../src/bin/client.rs"]
 pub mod client;
-use client::{client_check_ipv6_interfaces, client_socket_stream, new_sender};
+use client::client_socket_stream;
 
 #[path = "./test_client.rs"]
 pub mod test_client;
@@ -36,11 +35,8 @@ fn test_proxy_thread_ipv4() {
     let _l = listener(server_listen, output);
     sleep(Duration::from_millis(15));
 
-    let listen_socket_addr: SocketAddr = proxy_listen.to_socket_addrs().unwrap().next().unwrap();
-    let listen_socket = join_unicast(listen_socket_addr).expect("creating socket");
     let targets = vec![proxy_target];
-    //let _g = gateway(&vec![], &proxy_listen, true);
-    let _p = proxy_thread(listen_socket, &targets, false);
+    let _p = proxy_thread(&proxy_listen, &targets, false);
     sleep(Duration::from_millis(15));
 
     let _c = client_socket_stream(&data, vec![client_target], false);

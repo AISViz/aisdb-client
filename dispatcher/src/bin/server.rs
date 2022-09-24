@@ -8,6 +8,9 @@ use std::str::FromStr;
 //use std::sync::{Arc, Barrier};
 use std::thread::{Builder, JoinHandle};
 
+extern crate pico_args;
+use pico_args::Arguments;
+
 #[path = "../socket.rs"]
 pub mod socket;
 use socket::{bind_socket, new_socket};
@@ -33,7 +36,7 @@ struct ServerArgs {
 }
 
 fn parse_args() -> Result<ServerArgs, pico_args::Error> {
-    let mut pargs = pico_args::Arguments::from_env();
+    let mut pargs = Arguments::from_env();
     if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
         print!("{}", HELP);
         exit(0);
@@ -42,6 +45,10 @@ fn parse_args() -> Result<ServerArgs, pico_args::Error> {
         path: pargs.value_from_str("--path")?,
         listen_addr: pargs.values_from_str("--listen_addr")?,
     };
+    let remaining = pargs.finish();
+    if !remaining.is_empty() {
+        println!("Warning: unused arguments {:?}", remaining)
+    }
     if args.listen_addr.is_empty() {
         eprintln!("Error: the --listen_addr option must be set. Must provide atleast one client IP address");
     };
@@ -127,7 +134,8 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
     let join_handle = Builder::new()
         .name(format!("{}:server", addr))
         .spawn(move || {
-            let mut buf = [0u8; 1024]; // receive buffer
+            //let mut buf = [0u8; 1024]; // receive buffer
+            let mut buf = [0u8; 16384]; // receive buffer
             loop {
                 match listen_socket.recv_from(&mut buf[0..]) {
                     Ok((c, _remote_addr)) => {

@@ -14,6 +14,9 @@ name = "server"
 [[bin]]
 name = "proxy"
 
+[[bin]]
+name = "reverse_proxy"
+
 
 [dependencies]
 socket2 = { version = "0.4.7", features = ["all"] }
@@ -23,7 +26,6 @@ version = "0.5.0"
 features = [ "eq-separator",]
 
 [profile.release]
-code-model = "tiny"
 lto = true
 opt-level = "z"
 strip = true
