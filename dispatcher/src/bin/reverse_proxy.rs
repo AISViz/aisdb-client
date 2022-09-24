@@ -80,11 +80,13 @@ fn handle_client(downstream: TcpStream, multicast_addr: String) {
                 let _count_output = tcp_writer.write(&buf[0..count_input]);
             }
             Err(err) => {
+                #[cfg(debug_assertions)]
                 eprintln!("reverse_proxy_client: got an error: {}", err);
-                panic!("reverse_proxy_client: got an error: {}", err);
+                break;
             }
         }
         if let Err(e) = tcp_writer.flush() {
+            #[cfg(debug_assertions)]
             eprintln!("exiting {:?}: {}", multicast_socket, e);
             break;
         }
