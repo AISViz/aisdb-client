@@ -96,7 +96,7 @@ pub fn proxy_thread(
             )
         })
         .collect();
-    let mut buf = [0u8; 1024]; // receive buffer
+    let mut buf = [0u8; 32768]; // receive buffer
     Builder::new()
         .name(format!("{:#?}", listen_socket))
         .spawn(move || {

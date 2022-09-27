@@ -1,7 +1,7 @@
 use std::io;
 use std::net::SocketAddr;
 
-use socket2::{Domain, Protocol, Socket, Type};
+pub use socket2::{Domain, Protocol, Socket, Type};
 
 #[cfg(unix)]
 pub fn bind_socket(socket: &Socket, addr: &SocketAddr) -> io::Result<()> {

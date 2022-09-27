@@ -32,7 +32,7 @@ fn test_proxy_thread_ipv4() {
     let output = PathBuf::from(pathstr);
     assert!(data.is_file());
 
-    let _l = listener(server_listen, output);
+    let _l = listener(server_listen, output, false);
     sleep(Duration::from_millis(15));
 
     let targets = vec![proxy_target];

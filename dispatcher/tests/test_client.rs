@@ -1,10 +1,8 @@
 use std::fs::File;
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::thread::{sleep, Builder};
-#[cfg(not(debug_assertions))]
-#[cfg(unix)]
-use std::time::SystemTime;
 use std::time::{Duration, Instant};
 
 #[path = "../src/bin/client.rs"]
@@ -13,7 +11,7 @@ use client::client_socket_stream;
 
 #[path = "../src/bin/server.rs"]
 mod server;
-use server::listener;
+use server::{join_unicast, listener};
 
 //const TESTDATA: &str = "./tests/test_data_20211101.nm4";
 //const TESTDATA: &str = "./tests/test_data_random.bin";
@@ -36,7 +34,7 @@ pub fn truncate(path: PathBuf) -> i32 {
 }
 
 fn test_client(pathstr: &str, listen_addr: String, target_addr: String, tee: bool) {
-    let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
+    let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap(), false);
     let _c = client_socket_stream(&PathBuf::from(TESTDATA), vec![target_addr], tee);
     let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
     println!("log size: {}", bytesize);
@@ -63,15 +61,15 @@ fn test_client_socket_stream_multicast_ipv4() {
 fn test_client_socket_stream_unicast_ipv6() {
     let pathstr = &[TESTINGDIR, "streamoutput_client_ipv6_unicast.log"].join(&"");
     let listen_addr = "[::1]:9912".to_string();
-    let target_addr = "[::0]:9912".to_string();
+    let target_addr = "[::1]:9912".to_string();
     test_client(pathstr, listen_addr, target_addr, false)
 }
 
 #[test]
 fn test_client_socket_stream_multicast_ipv6() {
     let pathstr = &[TESTINGDIR, "streamoutput_client_ipv6_multicast.log"].join(&"");
-    let listen_addr = "[ff02::0110]:9913".to_string();
-    let target_addr = "[ff02::0110]:9913".to_string();
+    let listen_addr = "[ff02::1]:9913".to_string();
+    let target_addr = "[ff02::1]:9913".to_string();
     test_client(pathstr, listen_addr, target_addr, false)
 }
 
@@ -95,8 +93,8 @@ fn test_client_multiple_servers() {
 
     let bytesize_1 = truncate(PathBuf::from_str(pathstr_1).unwrap());
     let bytesize_2 = truncate(PathBuf::from_str(pathstr_2).unwrap());
-    let _l1 = listener(listen_addr_1, PathBuf::from_str(pathstr_1).unwrap());
-    let _l2 = listener(listen_addr_2, PathBuf::from_str(pathstr_2).unwrap());
+    let _l1 = listener(listen_addr_1, PathBuf::from_str(pathstr_1).unwrap(), false);
+    let _l2 = listener(listen_addr_2, PathBuf::from_str(pathstr_2).unwrap(), false);
     let _c = client_socket_stream(
         &PathBuf::from(TESTDATA),
         vec![target_addr_1, target_addr_2],
@@ -109,40 +107,36 @@ fn test_client_multiple_servers() {
 }
 
 #[cfg(unix)]
-//#[cfg(not(debug_assertions))]
+#[cfg(not(debug_assertions))]
 #[test]
 fn test_client_bitrate() {
-    let pathstr = &[TESTINGDIR, "streamoutput_client_test_largefile.log"].join(&"");
-    truncate(PathBuf::from_str(pathstr).unwrap());
     let target_addr = "127.0.0.1:9917".to_string();
     let listen_addr = "0.0.0.0:9917".to_string();
 
-    let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap());
+    let listen_socket =
+        join_unicast(listen_addr.to_socket_addrs().unwrap().next().unwrap()).unwrap();
+
+    sleep(Duration::from_millis(15));
+
     let _c = Builder::new().spawn(move || {
         client_socket_stream(&PathBuf::from("/dev/random"), vec![target_addr], false)
     });
-    let bytesize = truncate(PathBuf::from_str(pathstr).unwrap());
 
+    let mut bytecount: i64 = 0;
+    let mut buf = [0u8; 32768];
+
+    // measure time to send 1Gb of randomized binary data
     let start = Instant::now();
-
-    while start.elapsed().as_secs() < 2 {
-        sleep(Duration::from_millis(25));
+    while bytecount < 1000000000 {
+        let (c, _remote) = listen_socket.recv_from(&mut buf[0..32767]).unwrap();
+        bytecount += c as i64;
     }
     let elapsed = start.elapsed();
 
-    let info = match File::open(&pathstr) {
-        Ok(f) => f.metadata().unwrap().len(),
-        Err(e) => {
-            eprintln!("{}", e);
-            0
-        }
-    };
     println!(
-        "log size: {}  elapsed: {:.3}s\tbitrate: {:.1} Mbps",
-        info,
+        "transferred: {} Mb  elapsed: {:.3}s\tbitrate: {:.1} Mbps",
+        bytecount / 1000000,
         elapsed.as_secs_f32(),
-        info / elapsed.as_secs() / 1000000
+        bytecount as f64 / elapsed.as_secs_f64() / 1000000 as f64
     );
-    truncate(PathBuf::from_str(pathstr).unwrap());
-    assert!(bytesize > 0);
 }

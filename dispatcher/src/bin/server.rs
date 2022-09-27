@@ -1,11 +1,9 @@
 use std::fs::OpenOptions;
-use std::io;
-use std::io::{BufWriter, Write};
+use std::io::{stdout, BufWriter, Result as ioResult, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
-//use std::sync::{Arc, Barrier};
 use std::thread::{Builder, JoinHandle};
 
 extern crate pico_args;
@@ -27,12 +25,14 @@ USAGE:
 
 FLAGS:
   -h, --help    Prints help information
+  -t, --tee     Copy input to stdout
 
 "#;
 
 struct ServerArgs {
     listen_addr: Vec<String>,
     path: String,
+    tee: bool,
 }
 
 fn parse_args() -> Result<ServerArgs, pico_args::Error> {
@@ -41,9 +41,11 @@ fn parse_args() -> Result<ServerArgs, pico_args::Error> {
         print!("{}", HELP);
         exit(0);
     }
+    let tee = pargs.contains(["-t", "--tee"]);
     let args = ServerArgs {
         path: pargs.value_from_str("--path")?,
         listen_addr: pargs.values_from_str("--listen_addr")?,
+        tee,
     };
     let remaining = pargs.finish();
     if !remaining.is_empty() {
@@ -58,7 +60,7 @@ fn parse_args() -> Result<ServerArgs, pico_args::Error> {
 
 /// server: client socket handler
 /// binds a new socket connection on the network multicast channel
-pub fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
+pub fn join_multicast(addr: SocketAddr) -> ioResult<UdpSocket> {
     // https://bluejekyll.github.io/blog/posts/multicasting-in-rust/
     #[cfg(debug_assertions)]
     println!("server broadcasting to: {}", addr.ip());
@@ -103,14 +105,14 @@ pub fn join_multicast(addr: SocketAddr) -> io::Result<UdpSocket> {
     }
 }
 
-pub fn join_unicast(addr: SocketAddr) -> io::Result<UdpSocket> {
+pub fn join_unicast(addr: SocketAddr) -> ioResult<UdpSocket> {
     let socket = new_socket(&addr)?;
     bind_socket(&socket, &addr)?;
     Ok(socket.into())
 }
 
 /// server socket listener
-pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
+pub fn listener(addr: String, logfile: PathBuf, tee: bool) -> JoinHandle<()> {
     let addr = addr
         .to_socket_addrs()
         .unwrap()
@@ -123,6 +125,7 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
         .append(true)
         .open(&logfile);
     let mut writer = BufWriter::new(file.unwrap());
+    let mut output_buffer = BufWriter::new(stdout());
 
     let listen_socket = match addr.ip().is_multicast() {
         false => join_unicast(addr).expect("failed to create socket listener!"),
@@ -134,34 +137,20 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
     let join_handle = Builder::new()
         .name(format!("{}:server", addr))
         .spawn(move || {
-            //let mut buf = [0u8; 1024]; // receive buffer
-            let mut buf = [0u8; 16384]; // receive buffer
+            let mut buf = [0u8; 32768]; // receive buffer
             loop {
                 match listen_socket.recv_from(&mut buf[0..]) {
                     Ok((c, _remote_addr)) => {
-                        /*
-                        #[cfg(debug_assertions)]
-                        println!(
-                        "{}:server: got {} bytes from {}\t\t{}",
-                        addr,
-                        c,
-                        _remote_addr,
-                        String::from_utf8_lossy(&buf[0..c]),
-                        );
-                        */
-
+                        if tee {
+                            let _o = output_buffer
+                                .write(&buf[0..c])
+                                .expect("writing to output buffer");
+                            #[cfg(debug_assertions)]
+                            assert!(c == _o);
+                        }
                         let _ = writer
                             .write(&buf[0..c])
                             .unwrap_or_else(|_| panic!("writing to {:?}", &logfile));
-                        //buf = [0u8; 1024];
-
-                        /*
-                        let responder = new_socket(&remote_addr).expect("failed to create responder");
-                        let remote_socket = SockAddr::from(remote_addr);
-                        responder .send_to(thread_name.as_bytes(), &remote_socket) .expect("failed to respond");
-                        #[cfg(debug_assertions)]
-                        println!( "{}:server: sent thread_name {} to: {}", thread_name, thread_name, _remote_addr);
-                        */
                     }
                     Err(err) => {
                         writer.flush().unwrap();
@@ -171,6 +160,9 @@ pub fn listener(addr: String, logfile: PathBuf) -> JoinHandle<()> {
                     }
                 }
                 writer.flush().unwrap();
+                if tee {
+                    output_buffer.flush().unwrap();
+                }
             }
         })
         .unwrap();
@@ -204,7 +196,11 @@ pub fn main() {
         }
 
         println!("logging transmissions from {} to {}", hostname, logpath);
-        threads.push(listener(hostname, PathBuf::from_str(&logpath).unwrap()));
+        threads.push(listener(
+            hostname,
+            PathBuf::from_str(&logpath).unwrap(),
+            args.tee,
+        ));
     }
     for thread in threads {
         let _ = thread.join().unwrap();

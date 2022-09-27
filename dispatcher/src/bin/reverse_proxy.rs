@@ -30,10 +30,10 @@ FLAGS:
 "#;
 
 pub struct ReverseProxyArgs {
-    udp_listen_addr: String,
-    multicast_addr: String,
-    tcp_listen_addr: String,
-    tee: bool,
+    pub udp_listen_addr: String,
+    pub multicast_addr: String,
+    pub tcp_listen_addr: String,
+    pub tee: bool,
 }
 
 fn parse_args() -> Result<ReverseProxyArgs, pico_args::Error> {
@@ -71,7 +71,7 @@ fn handle_client(downstream: TcpStream, multicast_addr: String) {
     });
     // multicast_socket.set_broadcast(true).unwrap();
 
-    let mut buf = [0u8; 16384]; // receive buffer
+    let mut buf = [0u8; 32768]; // receive buffer
     let mut tcp_writer = BufWriter::new(downstream);
 
     loop {
@@ -80,13 +80,11 @@ fn handle_client(downstream: TcpStream, multicast_addr: String) {
                 let _count_output = tcp_writer.write(&buf[0..count_input]);
             }
             Err(err) => {
-                #[cfg(debug_assertions)]
                 eprintln!("reverse_proxy_client: got an error: {}", err);
                 break;
             }
         }
         if let Err(e) = tcp_writer.flush() {
-            #[cfg(debug_assertions)]
             eprintln!("exiting {:?}: {}", multicast_socket, e);
             break;
         }

@@ -1,10 +1,10 @@
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
-use std::io::{stdout, Result as ioResult};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Read, Result as ioResult, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::exit;
+use std::str::FromStr;
 
 extern crate pico_args;
 use pico_args::Arguments;
@@ -19,9 +19,11 @@ DISPATCH: CLIENT
 USAGE:
   client --path [FILE_DESCRIPTOR] --server_addr [SOCKET_ADDR] ...
 
+  path may be a file, file descriptor/handle, socket, or "-" for stdin
+
   e.g.
   client --path /dev/random --server_addr 127.0.0.1:9920 --server_addr [::1]:9921
-  client --path ./readme.md --server_addr 224.0.0.1:9922 --server_addr [ff02::1]:9923 --tee >> logfile.log
+  client --path - --server_addr 224.0.0.1:9922 --server_addr [ff02::1]:9923 --tee >> logfile.log
 
 FLAGS:
   -h, --help    Prints help information
@@ -152,16 +154,22 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
         );
     }
 
-    let file = OpenOptions::new()
-        .create(false)
-        .write(true)
-        .read(true)
-        .open(&path)
-        .unwrap_or_else(|e| panic!("opening {}, {}", path.as_os_str().to_str().unwrap(), e));
+    let mut reader: Box<dyn BufRead> = if path == &PathBuf::from_str("-").unwrap() {
+        Box::new(BufReader::new(stdin()))
+    } else {
+        Box::new(BufReader::new(
+            OpenOptions::new()
+                .create(false)
+                .write(false)
+                .read(true)
+                .open(&path)
+                .unwrap_or_else(|e| {
+                    panic!("opening {}, {}", path.as_os_str().to_str().unwrap(), e)
+                }),
+        ))
+    };
 
-    let mut reader = BufReader::new(file);
-    //let mut buf = vec![0u8; 1024];
-    let mut buf = vec![0u8; 16384];
+    let mut buf = vec![0u8; 32768];
     let mut output_buffer = BufWriter::new(stdout());
 
     while let Ok(c) = reader.read(&mut buf) {
@@ -172,7 +180,13 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
                 &path.display(),
             );
             break;
+        } else if c == 1 && String::from_utf8(buf[0..c].to_vec()).unwrap() == "\n".to_string() {
+            // skip empty lines
+            continue;
         }
+
+        //#[cfg(debug_assertions)]
+        //println!("\nc:{} |{:?}|", c, String::from_utf8(buf[0..c].to_vec()));
 
         for (target_addr, target_socket) in &targets {
             target_socket
@@ -183,11 +197,11 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
             let _o = output_buffer
                 .write(&buf[0..c])
                 .expect("writing to output buffer");
+            output_buffer.flush().unwrap();
             #[cfg(debug_assertions)]
             assert!(c == _o);
         }
     }
-    output_buffer.flush().unwrap();
     Ok(())
 }
 
