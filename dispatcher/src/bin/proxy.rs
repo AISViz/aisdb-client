@@ -60,42 +60,45 @@ fn parse_args() -> Result<GatewayArgs, pico_args::Error> {
     Ok(args)
 }
 
+pub fn new_listen_socket(listen_addr: &String) -> UdpSocket {
+    let listen_addr = listen_addr
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .expect("parsing socket address");
+    match listen_addr.ip().is_multicast() {
+            false => join_unicast(listen_addr).expect("failed to create socket listener!"),
+            true => {match join_multicast(listen_addr) {
+                Ok(s) => s,
+                Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", listen_addr, e),
+            }
+            },
+        }
+}
+pub fn new_downstream_socket(downstream_addr: &String) -> (SocketAddr, UdpSocket) {
+    let addr = downstream_addr
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .expect("parsing address");
+    (
+        addr,
+        match addr.is_ipv4() {
+            true => new_sender(&addr).expect("ipv4 output socket"),
+            false => client_check_ipv6_interfaces(&addr).expect("ipv6 output socket"),
+        },
+    )
+}
+
 pub fn proxy_thread(
     listen_addr: &String,
     downstream_addrs: &[String],
     tee: bool,
 ) -> JoinHandle<()> {
-    let addr = listen_addr
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .expect("parsing socket address");
-    let listen_socket = match addr.ip().is_multicast() {
-            false => join_unicast(addr).expect("failed to create socket listener!"),
-            true => {match join_multicast(addr) {
-                Ok(s) => s,
-                Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", addr, e),
-            }
-            },
-        };
+    let listen_socket = new_listen_socket(listen_addr);
     let mut output_buffer = BufWriter::new(stdout());
-    let targets: Vec<(SocketAddr, UdpSocket)> = downstream_addrs
-        .iter()
-        .map(|a| {
-            let addr = a
-                .to_socket_addrs()
-                .unwrap()
-                .next()
-                .expect("parsing address");
-            (
-                addr,
-                match addr.is_ipv4() {
-                    true => new_sender(&addr).expect("ipv4 output socket"),
-                    false => client_check_ipv6_interfaces(&addr).expect("ipv6 output socket"),
-                },
-            )
-        })
-        .collect();
+    let targets: Vec<(SocketAddr, UdpSocket)> =
+        downstream_addrs.iter().map(new_downstream_socket).collect();
     let mut buf = [0u8; 32768]; // receive buffer
     Builder::new()
         .name(format!("{:#?}", listen_socket))

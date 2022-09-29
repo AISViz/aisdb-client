@@ -180,7 +180,7 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
                 &path.display(),
             );
             break;
-        } else if c == 1 && String::from_utf8(buf[0..c].to_vec()).unwrap() == "\n".to_string() {
+        } else if c == 1 && String::from_utf8(buf[0..c].to_vec()).unwrap() == *"\n" {
             // skip empty lines
             continue;
         }
