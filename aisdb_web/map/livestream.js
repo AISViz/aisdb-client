@@ -52,7 +52,16 @@ streamsocket.onmessage = function (event) {
 
   // check target matrix for ship ID
   let trajectory = live_targets[msg.mmsi];
-  let meta_str = `mmsi: ${msg.mmsi}&emsp;sog: ${msg.sog}&emsp;rot: ${msg.rot}&emsp;heading: ${msg.heading}`;
+  let meta_str = `mmsi: ${msg.mmsi}`;
+  if (msg.sog >= 0) {
+    meta_str = `${meta_str }&emsp;sog: ${msg.sog.toFixed(1)}`;
+  }
+  if (msg.rot >= 0) {
+    meta_str = `${meta_str }&emsp;rot: ${msg.rot.toFixed(1)}`;
+  }
+  if (msg.heading >= 0) {
+    meta_str = `${meta_str }&emsp;heading: ${msg.heading.toFixed(0)}`;
+  }
 
   // if it doesn't exist yet, create a new LineString object
   if (trajectory === undefined) {
@@ -75,9 +84,9 @@ streamsocket.onmessage = function (event) {
     trajectory.getGeometry().setCoordinates(coords);
 
     // compress track using douglas-peucker algorithm
-    if (trajectory.getGeometry().getCoordinates().length >= 25 &&
-      trajectory.getGeometry().getCoordinates().length % 25 === 0) {
-      trajectory.setGeometry(trajectory.getGeometry().simplify(1000));
+    if (trajectory.getGeometry().getCoordinates().length >= 100 &&
+      trajectory.getGeometry().getCoordinates().length % 100 === 0) {
+      trajectory.setGeometry(trajectory.getGeometry().simplify(100));
       // console.log(`decimated ${trajectory.get('mmsi')} ${trajectory.getGeometry().getCoordinates().length}`);
     }
 

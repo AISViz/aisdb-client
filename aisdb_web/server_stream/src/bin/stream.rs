@@ -1,17 +1,19 @@
+use std::io::{stdout, BufWriter, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::thread::spawn;
+use std::thread::{spawn, Builder, JoinHandle};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-extern crate tungstenite;
-use tungstenite::{accept, Message};
-
 extern crate dispatcher;
-use dispatcher::proxy::proxy_thread;
+use dispatcher::proxy::new_downstream_socket;
+use dispatcher::proxy::new_listen_socket;
 use dispatcher::reverse_proxy::ReverseProxyArgs;
 use dispatcher::server::join_multicast;
 
 extern crate nmea_parser;
 use nmea_parser::{NmeaParser, ParsedMessage};
+
+extern crate tungstenite;
+use tungstenite::{accept, Message};
 
 extern crate serde;
 use serde::{Deserialize, Serialize};
@@ -30,10 +32,7 @@ struct VesselPositionPing {
     heading: f64,
 }
 
-pub fn filter_vesseldata(sentence: &str, parser: &mut NmeaParser) -> Option<String> {
-    #[cfg(debug_assertions)]
-    println!("{:?}", sentence);
-
+fn filter_vesseldata(sentence: &str, parser: &mut NmeaParser) -> Option<String> {
     match parser.parse_sentence(sentence).ok()? {
         ParsedMessage::VesselDynamicData(vdd) => {
             let ping = VesselPositionPing {
@@ -56,21 +55,64 @@ pub fn filter_vesseldata(sentence: &str, parser: &mut NmeaParser) -> Option<Stri
     }
 }
 
-fn process_message(buf: &[u8], i: usize, parser: &mut NmeaParser) -> Vec<Message> {
+fn process_message(buf: &[u8], i: usize, parser: &mut NmeaParser) -> Vec<String> {
     let msg_txt = &String::from_utf8(buf[0..i].to_vec()).unwrap();
     let mut msgs = vec![];
     for msg in msg_txt.split("\r\n") {
-        if msg.len() == 0 {
+        if msg.is_empty() {
             continue;
         }
         if let Some(txt) = filter_vesseldata(msg, parser) {
-            msgs.push(Message::Text(txt));
+            msgs.push(txt);
         }
     }
     msgs
 }
 
-fn handle_client(downstream: &TcpStream, multicast_addr: String) {
+pub fn decode_multicast(
+    listen_addr: &String,
+    multicast_addr: &String,
+    tee: bool,
+) -> JoinHandle<()> {
+    let listen_socket = new_listen_socket(listen_addr);
+    let (target_addr, target_socket) = new_downstream_socket(multicast_addr);
+
+    let mut buf = [0u8; 32768];
+    let mut parser = NmeaParser::new();
+    let mut output_buffer = BufWriter::new(stdout());
+
+    Builder::new()
+        .name(format!("{:#?}", listen_socket))
+        .spawn(move || {
+            //listen_socket.read_timeout().unwrap();
+            listen_socket.set_broadcast(true).unwrap();
+            loop {
+                match listen_socket.recv_from(&mut buf[0..]) {
+                    Ok((c, _remote_addr)) => {
+                        for msg in process_message(&buf, c, &mut parser) {
+                            target_socket
+                                .send_to(msg.as_bytes(), &target_addr)
+                                .expect("sending to server socket");
+                            if tee {
+                                let _o = output_buffer
+                                    .write(&buf[0..c])
+                                    .expect("writing to output buffer");
+                                output_buffer.flush().unwrap();
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("decode_multicast: got an error: {}", err);
+                        #[cfg(debug_assertions)]
+                        panic!("decode_multicast: got an error: {}", err);
+                    }
+                }
+            }
+        })
+        .unwrap()
+}
+
+pub fn handle_client(downstream: &TcpStream, multicast_addr: String) {
     let multicast_addr = multicast_addr
         .to_socket_addrs()
         .unwrap()
@@ -88,16 +130,15 @@ fn handle_client(downstream: &TcpStream, multicast_addr: String) {
     /*
     if msg.is_binary() || msg.is_text() { websocket.write_message(msg).unwrap(); } }
     */
-    let mut parser = NmeaParser::new();
 
     loop {
         match multicast_socket.recv_from(&mut buf[0..]) {
             Ok((count_input, _remote_addr)) => {
-                for msg in process_message(&buf, count_input, &mut parser) {
-                    if let Err(e) = websocket.write_message(msg) {
-                        eprintln!("dropping client: {}", e.to_string());
-                        return;
-                    }
+                if let Err(e) = websocket.write_message(Message::Text(
+                    String::from_utf8(buf[0..count_input].to_vec()).unwrap(),
+                )) {
+                    eprintln!("dropping client: {}", e);
+                    return;
                 }
             }
             Err(err) => {
@@ -113,12 +154,12 @@ fn main() {
         udp_listen_addr: "[::]:9921".into(),
         tcp_listen_addr: "[::]:9920".into(),
         multicast_addr: "224.0.0.20:9919".into(),
-        tee: false,
+        tee: true,
     };
 
-    let _multicast = proxy_thread(
+    let _multicast = decode_multicast(
         &args.udp_listen_addr,
-        &[args.multicast_addr.clone()],
+        &args.multicast_addr.clone(),
         args.tee,
     );
     let listener = TcpListener::bind(args.tcp_listen_addr).unwrap();
