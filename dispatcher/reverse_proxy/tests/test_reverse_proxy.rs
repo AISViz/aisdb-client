@@ -2,17 +2,13 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 
-#[path = "../src/bin/reverse_proxy.rs"]
-pub mod reverse_proxy;
-use reverse_proxy::reverse_proxy_tcp;
-
-#[path = "../src/bin/client.rs"]
-pub mod client;
+extern crate client;
 use client::client_socket_stream;
 
-#[path = "./test_client.rs"]
-pub mod test_client;
-use test_client::{truncate, TESTDATA, TESTINGDIR};
+extern crate testconfig;
+use testconfig::TESTDATA;
+
+use reverse_proxy::reverse_proxy_tcp;
 
 #[test]
 fn test_reverse_proxy() {

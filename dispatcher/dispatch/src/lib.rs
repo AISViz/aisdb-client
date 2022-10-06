@@ -41,12 +41,15 @@ pub fn new_socket(addr: &SocketAddr) -> io::Result<Socket> {
 
     #[cfg(unix)]
     if let Err(e) = socket.set_reuse_port(true) {
-        eprintln!("could not set reusable port! are you running in WSL? {}", e);
+        eprintln!(
+            "Could not set reusable port! This feature requires unix. {}",
+            e
+        );
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     if let Err(e) = socket.set_freebind(true) {
         eprintln!(
-            "could not set freebind socket! are you running in WSL? {}",
+            "Could not set freebind socket! This feature requires linux. {}",
             e
         );
     }

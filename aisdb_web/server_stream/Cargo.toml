@@ -15,8 +15,9 @@ license-file = "../../license.txt"
 name = "stream"
 
 [dependencies]
+server = {path = "../../dispatcher/server"}
+proxy= {path = "../../dispatcher/proxy"}
 tungstenite = {version = "0.17.3", features = ["native-tls"]}
-dispatcher = { path = "../../dispatcher" }
 nmea-parser = {version = "0.9"}
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"

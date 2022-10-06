@@ -1,37 +1,13 @@
-use std::fs::File;
-use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::thread::{sleep, Builder};
-use std::time::{Duration, Instant};
 
-#[path = "../src/bin/client.rs"]
-mod client;
+extern crate testconfig;
+use testconfig::{truncate, TESTDATA, TESTINGDIR};
+
+extern crate server;
+use server::listener;
+
 use client::client_socket_stream;
-
-#[path = "../src/bin/server.rs"]
-mod server;
-use server::{join_unicast, listener};
-
-//const TESTDATA: &str = "./tests/test_data_20211101.nm4";
-//const TESTDATA: &str = "./tests/test_data_random.bin";
-pub const TESTDATA: &str = "./readme.md";
-pub const TESTINGDIR: &str = "./tests/";
-
-pub fn truncate(path: PathBuf) -> i32 {
-    sleep(Duration::from_millis(15));
-    let info = match File::open(&path) {
-        Ok(f) => f.metadata().unwrap().len(),
-        Err(e) => {
-            eprintln!("{}", e);
-            0
-        }
-    };
-
-    let i = info as i32;
-    File::create(&path).expect("creating file");
-    i
-}
 
 fn test_client(pathstr: &str, listen_addr: String, target_addr: String, tee: bool) {
     let _l = listener(listen_addr, PathBuf::from_str(pathstr).unwrap(), false);
@@ -68,8 +44,8 @@ fn test_client_socket_stream_unicast_ipv6() {
 #[test]
 fn test_client_socket_stream_multicast_ipv6() {
     let pathstr = &[TESTINGDIR, "streamoutput_client_ipv6_multicast.log"].join(&"");
-    let listen_addr = "[ff02::1]:9913".to_string();
-    let target_addr = "[ff02::1]:9913".to_string();
+    let listen_addr = "[ff02::2]:9913".to_string();
+    let target_addr = "[ff02::2]:9913".to_string();
     test_client(pathstr, listen_addr, target_addr, false)
 }
 
@@ -112,6 +88,11 @@ fn test_client_multiple_servers() {
 fn test_client_bitrate() {
     let target_addr = "127.0.0.1:9917".to_string();
     let listen_addr = "0.0.0.0:9917".to_string();
+
+    use dispatcher::server::join_unicast;
+    use std::net::ToSocketAddrs;
+    use std::thread::Builder;
+    use std::time::Instant;
 
     let listen_socket =
         join_unicast(listen_addr.to_socket_addrs().unwrap().next().unwrap()).unwrap();

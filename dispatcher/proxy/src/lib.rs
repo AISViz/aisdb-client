@@ -1,64 +1,12 @@
 use std::io::{stdout, BufWriter, Write};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::process::exit;
 use std::thread::{Builder, JoinHandle};
-//use std::thread::sleep;
-//use std::time::Duration;
 
-extern crate pico_args;
-use pico_args::Arguments;
-
-#[path = "./client.rs"]
-pub mod client;
+extern crate client;
 use client::{client_check_ipv6_interfaces, new_sender};
 
-#[path = "./server.rs"]
-pub mod server;
+extern crate server;
 use server::{join_multicast, join_unicast};
-
-const HELP: &str = r#"
-DISPATCH: proxy 
-
-USAGE:
-  proxy --listen_addr [LOCAL_ADDRESS:PORT] --downstream_addr [HOSTNAME:PORT] ...
-
-  either --listen_addr or --downstream_addr may be repeated
-  e.g.
-  proxy --listen_addr '0.0.0.0:9920' --downstream_addr '[::1]:9921' --downstream_addr 'localhost:9922' --tee
-
-
-FLAGS:
-  -h, --help    Prints help information
-  -t, --tee     Copy input to stdout
-
-"#;
-
-pub struct GatewayArgs {
-    downstream_addrs: Vec<String>,
-    listen_addrs: Vec<String>,
-    tee: bool,
-}
-
-fn parse_args() -> Result<GatewayArgs, pico_args::Error> {
-    let mut pargs = Arguments::from_env();
-    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
-        print!("{}", HELP);
-        exit(0);
-    }
-    let tee = pargs.contains(["-t", "--tee"]);
-
-    let args = GatewayArgs {
-        listen_addrs: pargs.values_from_str("--listen_addr")?,
-        downstream_addrs: pargs.values_from_str("--downstream_addr")?,
-        tee,
-    };
-    let remaining = pargs.finish();
-    if !remaining.is_empty() {
-        println!("Warning: unused arguments {:?}", remaining)
-    }
-
-    Ok(args)
-}
 
 pub fn new_listen_socket(listen_addr: &String) -> UdpSocket {
     let listen_addr = listen_addr
@@ -67,13 +15,13 @@ pub fn new_listen_socket(listen_addr: &String) -> UdpSocket {
         .next()
         .expect("parsing socket address");
     match listen_addr.ip().is_multicast() {
-            false => join_unicast(listen_addr).expect("failed to create socket listener!"),
-            true => {match join_multicast(listen_addr) {
-                Ok(s) => s,
-                Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", listen_addr, e),
-            }
-            },
+        false => join_unicast(listen_addr).expect("failed to create socket listener!"),
+        true => {match join_multicast(listen_addr) {
+            Ok(s) => s,
+            Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", listen_addr, e),
         }
+        },
+    }
 }
 pub fn new_downstream_socket(downstream_addr: &String) -> (SocketAddr, UdpSocket) {
     let addr = downstream_addr
@@ -149,18 +97,4 @@ pub fn proxy_gateway(
         threads.push(proxy_thread(listen_addr, downstream_addrs, tee));
     }
     threads
-}
-
-pub fn main() {
-    let args = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("Error: {}.", e);
-            exit(1);
-        }
-    };
-
-    for thread in proxy_gateway(&args.downstream_addrs, &args.listen_addrs, args.tee) {
-        thread.join().unwrap();
-    }
 }

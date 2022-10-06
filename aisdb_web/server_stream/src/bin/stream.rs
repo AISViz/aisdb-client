@@ -3,11 +3,12 @@ use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::thread::{spawn, Builder, JoinHandle};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-extern crate dispatcher;
-use dispatcher::proxy::new_downstream_socket;
-use dispatcher::proxy::new_listen_socket;
-use dispatcher::reverse_proxy::ReverseProxyArgs;
-use dispatcher::server::join_multicast;
+extern crate proxy;
+use proxy::new_downstream_socket;
+use proxy::new_listen_socket;
+
+extern crate server;
+use server::join_multicast;
 
 extern crate nmea_parser;
 use nmea_parser::{NmeaParser, ParsedMessage};
@@ -32,19 +33,26 @@ struct VesselPositionPing {
     heading: f64,
 }
 
+struct ReverseProxyArgs {
+    udp_listen_addr: String,
+    multicast_addr: String,
+    tcp_listen_addr: String,
+    tee: bool,
+}
+
 fn filter_vesseldata(sentence: &str, parser: &mut NmeaParser) -> Option<String> {
     match parser.parse_sentence(sentence).ok()? {
         ParsedMessage::VesselDynamicData(vdd) => {
             let ping = VesselPositionPing {
                 mmsi: vdd.mmsi,
-                lon: vdd.longitude.unwrap(),
-                lat: vdd.latitude.unwrap(),
+                lon: (vdd.longitude.unwrap() * 1000000.0).round() / 1000000.0,
+                lat: (vdd.latitude.unwrap() * 1000000.0).round() / 1000000.0,
                 time: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_secs(),
-                rot: vdd.rot.unwrap_or(-1.),
-                sog: vdd.sog_knots.unwrap_or(-1.),
+                rot: (vdd.rot.unwrap_or(-1.) * 1000.0).round() / 1000.0,
+                sog: (vdd.sog_knots.unwrap_or(-1.) * 1000.0).round() / 1000.0,
                 heading: vdd.heading_true.unwrap_or(-1.),
             };
 

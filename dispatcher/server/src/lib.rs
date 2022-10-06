@@ -2,61 +2,10 @@ use std::fs::OpenOptions;
 use std::io::{stdout, BufWriter, Result as ioResult, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
-use std::process::exit;
-use std::str::FromStr;
 use std::thread::{Builder, JoinHandle};
 
-extern crate pico_args;
-use pico_args::Arguments;
-
-#[path = "../socket.rs"]
-pub mod socket;
-use socket::{bind_socket, new_socket};
-
-const HELP: &str = r#"
-DISPATCH: SERVER
-
-USAGE:
-  server --path [OUTPUT_LOGFILE] --listen_addr [SOCKET_ADDR] ...
-
-  e.g.
-  server --path logfile.log --listen_addr 127.0.0.1:9920 --listen_addr [::1]:9921
-
-
-FLAGS:
-  -h, --help    Prints help information
-  -t, --tee     Copy input to stdout
-
-"#;
-
-struct ServerArgs {
-    listen_addr: Vec<String>,
-    path: String,
-    tee: bool,
-}
-
-fn parse_args() -> Result<ServerArgs, pico_args::Error> {
-    let mut pargs = Arguments::from_env();
-    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
-        print!("{}", HELP);
-        exit(0);
-    }
-    let tee = pargs.contains(["-t", "--tee"]);
-    let args = ServerArgs {
-        path: pargs.value_from_str("--path")?,
-        listen_addr: pargs.values_from_str("--listen_addr")?,
-        tee,
-    };
-    let remaining = pargs.finish();
-    if !remaining.is_empty() {
-        println!("Warning: unused arguments {:?}", remaining)
-    }
-    if args.listen_addr.is_empty() {
-        eprintln!("Error: the --listen_addr option must be set. Must provide atleast one client IP address");
-    };
-
-    Ok(args)
-}
+extern crate dispatch;
+use dispatch::{bind_socket, new_socket};
 
 /// server: client socket handler
 /// binds a new socket connection on the network multicast channel
@@ -84,12 +33,21 @@ pub fn join_multicast(addr: SocketAddr) -> ioResult<UdpSocket> {
             // bind to all interfaces
             //assert!(socket.set_multicast_if_v6(0).is_ok());
 
-            // join multicast channel
-            assert!(socket.join_multicast_v6(mdns_v6, 0).is_ok());
-            //socket.join_multicast_v6(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), addr.port().into())?;
-
             // disable ipv4->ipv6 multicast rerouting
             assert!(socket.set_only_v6(true).is_ok());
+
+            /*
+            #[cfg(target_os = "macos")]
+            if socket.set_multicast_if_v6(0).is_err() {
+                //panic!();
+            }
+            */
+
+            // join multicast channel
+            if let Err(e) = socket.join_multicast_v6(mdns_v6, 0) {
+                panic!("joining ipv6 multicast channel: {} {}", mdns_v6, e);
+            }
+            //socket.join_multicast_v6(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), addr.port().into())?;
 
             let listenaddr = SocketAddr::new(
                 IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
@@ -119,6 +77,13 @@ pub fn listener(addr: String, logfile: PathBuf, tee: bool) -> JoinHandle<()> {
         .next()
         .expect("parsing socket address");
 
+    if !logfile.as_path().parent().unwrap().is_dir() {
+        panic!(
+            "directory does not exist: {}",
+            logfile.parent().unwrap().display()
+        );
+    }
+
     let file = OpenOptions::new()
         .create(true)
         .write(true)
@@ -128,13 +93,14 @@ pub fn listener(addr: String, logfile: PathBuf, tee: bool) -> JoinHandle<()> {
     let mut output_buffer = BufWriter::new(stdout());
 
     let listen_socket = match addr.ip().is_multicast() {
-        false => join_unicast(addr).expect("failed to create socket listener!"),
+        //false => join_unicast(addr).expect(format!("failed to create unicast socket listener! {}", addr).as_str()),
+        false => join_unicast(addr).unwrap_or_else(|_| panic!("failed to create unicast socket listener! {}", addr)),
         true => {match join_multicast(addr) {
             Ok(s) => s,
             Err(e) => panic!("failed to create multicast listener on address {}! are you sure this is a valid multicast channel?\n{:?}", addr, e),
         }},
     };
-    let join_handle = Builder::new()
+    Builder::new()
         .name(format!("{}:server", addr))
         .spawn(move || {
             let mut buf = [0u8; 32768]; // receive buffer
@@ -165,44 +131,5 @@ pub fn listener(addr: String, logfile: PathBuf, tee: bool) -> JoinHandle<()> {
                 }
             }
         })
-        .unwrap();
-
-    //downstream_barrier.wait();
-    join_handle
-}
-
-pub fn main() {
-    let args = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("Error: {}.", e);
-            exit(1);
-        }
-    };
-
-    let mut threads = vec![];
-
-    let append_listen_addr = args.listen_addr.len() > 1;
-
-    for hostname in args.listen_addr {
-        // if listening to multiple clients at once, log each client to a
-        // separate file, with the client address appended to the filename
-        let mut logpath: String = "".to_owned();
-        logpath.push_str(&args.path);
-        if append_listen_addr {
-            for pathsegment in [&args.path, &".".to_string(), &hostname] {
-                logpath.push_str(pathsegment);
-            }
-        }
-
-        println!("logging transmissions from {} to {}", hostname, logpath);
-        threads.push(listener(
-            hostname,
-            PathBuf::from_str(&logpath).unwrap(),
-            args.tee,
-        ));
-    }
-    for thread in threads {
-        let _ = thread.join().unwrap();
-    }
+        .unwrap()
 }

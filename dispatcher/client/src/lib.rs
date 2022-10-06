@@ -1,68 +1,15 @@
-use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Read, Result as ioResult, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
-use std::process::exit;
 use std::str::FromStr;
 
-extern crate pico_args;
-use pico_args::Arguments;
-
-#[path = "../socket.rs"]
-pub mod socket;
-use socket::{bind_socket, new_socket};
-
-const HELP: &str = r#"
-DISPATCH: CLIENT
-
-USAGE:
-  client --path [FILE_DESCRIPTOR] --server_addr [SOCKET_ADDR] ...
-
-  path may be a file, file descriptor/handle, socket, or "-" for stdin
-
-  e.g.
-  client --path /dev/random --server_addr 127.0.0.1:9920 --server_addr [::1]:9921
-  client --path - --server_addr 224.0.0.1:9922 --server_addr [ff02::1]:9923 --tee >> logfile.log
-
-FLAGS:
-  -h, --help    Prints help information
-  -t, --tee     Copy input to stdout
-
-"#;
-
-/// command line arguments
-struct ClientArgs {
-    path: PathBuf,
-    server_addrs: Vec<String>,
-    tee: bool,
-}
-
-/// retrieve command line arguments as ClientArgs struct
-fn parse_args() -> Result<ClientArgs, pico_args::Error> {
-    let mut pargs = Arguments::from_env();
-    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
-        print!("{}", HELP);
-        exit(0);
-    }
-    let tee = pargs.contains(["-t", "--tee"]);
-
-    fn parse_path(s: &OsStr) -> Result<PathBuf, &'static str> {
-        Ok(s.into())
-    }
-
-    let args = ClientArgs {
-        path: pargs.value_from_os_str("--path", parse_path)?,
-        server_addrs: pargs.values_from_str("--server_addr")?,
-        tee,
-    };
-    let remaining = pargs.finish();
-    if !remaining.is_empty() {
-        println!("Warning: unused arguments {:?}", remaining)
-    }
-
-    Ok(args)
-}
+//#[path = "../socket.rs"]
+//mod socket;
+//use socket::{bind_socket, new_socket};
+//use crate::{bind_socket, new_socket};
+extern crate dispatch;
+use dispatch::{bind_socket, new_socket};
 
 /// new upstream socket
 /// socket will allow any downstream IP i.e. 0.0.0.0
@@ -94,12 +41,13 @@ fn new_sender_ipv6(addr: &SocketAddr, ipv6_interface: u32) -> ioResult<UdpSocket
 
     let socket = new_socket(addr)?;
     if addr.ip().is_multicast() {
-        let _a = socket.set_multicast_if_v6(ipv6_interface);
+        if let Err(e) = socket.set_multicast_if_v6(ipv6_interface) {
+            panic!("setting multicast ipv6 interface: {} {}", ipv6_interface, e);
+        }
         let _b = socket.set_multicast_loop_v6(true);
         socket.set_reuse_address(true)?;
         let _c = bind_socket(&socket, &target_addr);
 
-        assert!(_a.is_ok());
         assert!(_b.is_ok());
         if _c.is_err() {
             panic!("error binding socket {:?}", _c);
@@ -111,20 +59,19 @@ fn new_sender_ipv6(addr: &SocketAddr, ipv6_interface: u32) -> ioResult<UdpSocket
 
 pub fn client_check_ipv6_interfaces(addr: &SocketAddr) -> ioResult<UdpSocket> {
     for i in 0..32 {
-        #[cfg(debug_assertions)]
-        println!("checking interface {}", i);
+        //#[cfg(debug_assertions)]
+        //println!("checking interface {}", i);
         let socket = new_sender_ipv6(addr, i)?;
         let result = socket.send_to(b"", addr);
-        match result {
-            Ok(_r) => {
-                //
-                #[cfg(debug_assertions)]
-                println!("opened interface {}:\t{}", i, _r);
-                return Ok(socket);
-            }
-            Err(e) => {
-                eprintln!("err: could not open interface {}:\t{:?}", i, e)
-            }
+        if let Ok(_r) = result {
+            //Ok(_r) => {
+            //#[cfg(debug_assertions)]
+            //println!("opened interface {}:\t{}", i, _r);
+            return Ok(socket);
+            //}
+            //Err(e) => {
+            //    eprintln!("err: could not open interface {}:\t{:?}", i, e)
+            //}
         }
     }
     panic!("No suitable network interfaces were found!");
@@ -203,15 +150,4 @@ pub fn client_socket_stream(path: &PathBuf, server_addrs: Vec<String>, tee: bool
         }
     }
     Ok(())
-}
-
-pub fn main() {
-    let args = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("Error: {}.", e);
-            exit(1);
-        }
-    };
-    let _ = client_socket_stream(&args.path, args.server_addrs, args.tee);
 }
