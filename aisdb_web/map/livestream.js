@@ -41,7 +41,7 @@ let live_targets = {};
 streamsocket.onerror = function(event) {
   let msg = `livestream: an unexpected error occurred [${event.code}]`;
   streamsocket.close();
-  streamsocket.onerror = null;
+  streamsocket.onerror = msg;
   streamsocket = null;
 };
 

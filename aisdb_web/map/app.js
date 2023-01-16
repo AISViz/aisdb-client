@@ -1,11 +1,21 @@
+if ('caches' in window) {
+  caches.keys()
+    .then((keyList) => {
+      return Promise.all(keyList.map((key) => {
+        return caches.delete(key);
+      }));
+    });
+}
 navigator.serviceWorker.getRegistrations().then((registrations) => {
   for (let registration of registrations) {
     registration.unregister();
   }
 });
 
+import { init_maplayers } from './map';
+
 (async () => {
-  let { init_maplayers } = await import('./map');
+  // let { init_maplayers } = await import('./map');
   let [
     { createVesselMenuItem, vesselmenu, vesseltypeselect },
     { vessellabels },

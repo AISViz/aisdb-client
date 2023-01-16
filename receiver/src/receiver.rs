@@ -40,6 +40,56 @@ fn epoch_time() -> u64 {
         .as_secs()
 }
 
+pub struct ReceiverArgs {
+    pub dbpath: Option<PathBuf>,
+    pub tcp_connect_addr: Option<String>,
+    pub tcp_listen_addr: Option<String>,
+    pub udp_listen_addr: String,
+    pub multicast_addr_parsed: Option<String>,
+    pub multicast_addr_rawdata: Option<String>,
+    pub tcp_output_addr: Option<String>,
+    pub udp_output_addr: Option<String>,
+    pub dynamic_msg_bufsize: Option<usize>,
+    pub static_msg_bufsize: Option<usize>,
+    pub tee: bool,
+}
+
+fn parse_args() -> Result<ReceiverArgs, pico_args::Error> {
+    let mut pargs = Arguments::from_env();
+    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
+        //print!("{}", HELP);
+        exit(0);
+    }
+    fn parse_path(s: &OsStr) -> Result<PathBuf, &'static str> {
+        Ok(s.into())
+    }
+
+    let args = ReceiverArgs {
+        dbpath: pargs.opt_value_from_os_str("--path", parse_path)?,
+        tcp_connect_addr: pargs.opt_value_from_str("--tcp-connect-addr")?,
+        tcp_listen_addr: pargs.opt_value_from_str("--tcp-listen-addr")?,
+        udp_listen_addr: pargs.value_from_str("--udp-listen-addr")?,
+        multicast_addr_parsed: pargs.opt_value_from_str("--multicast-addr-parsed")?,
+        multicast_addr_rawdata: pargs.opt_value_from_str("--multicast-addr-rawdata")?,
+        tcp_output_addr: pargs.opt_value_from_str("--tcp-output-addr")?,
+        udp_output_addr: pargs.opt_value_from_str("--udp-output-addr")?,
+        dynamic_msg_bufsize: pargs
+            .opt_value_from_str("--dynamic-msg-bufsize")?
+            .map(|s: String| s.parse().unwrap()),
+        static_msg_bufsize: pargs
+            .opt_value_from_str("--static-msg-bufsize")?
+            .map(|s: String| s.parse().unwrap()),
+        tee: pargs.contains(["-t", "--tee"]),
+    };
+
+    let remaining = pargs.finish();
+    if !remaining.is_empty() {
+        println!("Warning: unused arguments {:?}", remaining)
+    }
+
+    Ok(args)
+}
+
 /// Filters incoming UDP messages for vessel dynamic and static messages
 /// inserts static and dynamic messages into database,
 /// and returns VesselPositionPing for dynamic data
@@ -138,18 +188,25 @@ fn decode_multicast(
     dynamic_msg_buffsize: usize,
     static_msg_bufsize: usize,
 ) -> JoinHandle<()> {
+    println!("Decoding messages incoming on {}", udp_listen_addr);
     let (_udp_listen_addr, listen_socket) = upstream_socket_interface(udp_listen_addr).unwrap();
 
     // downstream UDP multicast channel for raw data
     let mut target_raw: Option<(SocketAddr, UdpSocket)> = None;
     if let Some(rawaddr) = multicast_addr_rawdata {
+        println!(
+            "copying raw input: {} UDP -> {} UDP",
+            _udp_listen_addr, rawaddr,
+        );
         //target_raw = Some(new_downstream_socket(&rawaddr));
         target_raw = Some(target_socket_interface(&rawaddr).unwrap());
     }
 
     // downstream multicast channel for parsed data
-    let target_parsed = multicast_addr_parsed
-        .map(|parsedaddr| target_socket_interface(&parsedaddr).expect("binding socket interface"));
+    let target_parsed = multicast_addr_parsed.map(|parsedaddr| {
+        println!("copying parsed output to {} UDP", parsedaddr);
+        target_socket_interface(&parsedaddr).expect("binding socket interface")
+    });
 
     let mut buf = [0u8; BUFSIZE];
     let mut parser = NmeaParser::new();
@@ -226,6 +283,7 @@ fn decode_multicast(
 /// Listens for incoming UDP multicast packets, and forward
 /// packets downstream to connected clients
 fn handle_websocket_client(downstream: TcpStream, multicast_addr: String) -> JoinHandle<()> {
+    println!("forwarding {}UDP to downstream TCP clients", multicast_addr);
     spawn(move || {
         let (_multicast_addr, multicast_socket) =
             target_socket_interface(&multicast_addr).expect("binding socket");
@@ -275,122 +333,52 @@ fn listen_websocket_clients(udp_input_addr: String, tcp_output_addr: String) -> 
     })
 }
 
-pub fn start_receiver(
-    dbpath: Option<PathBuf>,
-    tcp_connect_addr: Option<String>,
-    tcp_listen_addr: Option<String>,
-    udp_listen_addr: String,
-    multicast_addr_parsed: Option<String>,
-    multicast_addr_rawdata: Option<String>,
-    tcp_output_addr: Option<String>,
-    udp_output_addr: Option<String>,
-    dynamic_msg_bufsize: Option<usize>,
-    static_msg_bufsize: Option<usize>,
-    tee: bool,
-) -> Vec<JoinHandle<()>> {
+pub fn start_receiver(args: ReceiverArgs) -> Vec<JoinHandle<()>> {
     let mut threads: Vec<JoinHandle<()>> = vec![];
 
     // multicast rx/tx thread
     threads.push(decode_multicast(
-        udp_listen_addr.clone(),
-        multicast_addr_parsed.clone(),
-        multicast_addr_rawdata.clone(),
-        tee,
-        dbpath,
-        dynamic_msg_bufsize.unwrap_or(256),
-        static_msg_bufsize.unwrap_or(64),
+        args.udp_listen_addr.clone(),
+        args.multicast_addr_parsed.clone(),
+        args.multicast_addr_rawdata.clone(),
+        args.tee,
+        args.dbpath,
+        args.dynamic_msg_bufsize.unwrap_or(256),
+        args.static_msg_bufsize.unwrap_or(64),
     ));
 
     // forward upstream TCP to the UDP input channel
     // TODO: SSL
-    if let Some(tcpconn) = tcp_connect_addr {
-        threads.push(proxy_tcp_udp(tcpconn, udp_listen_addr.clone()));
+    if let Some(tcpconn) = args.tcp_connect_addr {
+        threads.push(proxy_tcp_udp(tcpconn, args.udp_listen_addr.clone()));
     }
 
     // listen for inbound TCP connections and forward to UDP input
-    if let Some(tcpaddr) = tcp_listen_addr {
-        threads.push(reverse_proxy_tcp_udp(tcpaddr, udp_listen_addr));
+    if let Some(tcpaddr) = args.tcp_listen_addr {
+        threads.push(reverse_proxy_tcp_udp(tcpaddr, args.udp_listen_addr));
     }
 
     // bind UDP output socket to send raw input from multicast channel
-    if let (Some(udpout), Some(multicast_raw)) = (udp_output_addr, multicast_addr_rawdata) {
+    if let (Some(udpout), Some(multicast_raw)) = (args.udp_output_addr, args.multicast_addr_rawdata)
+    {
         threads.push(reverse_proxy_udp(multicast_raw, udpout));
     }
 
     // parsed JSON output via websocket
-    if let (Some(tcpout), Some(multicast_parsed)) = (tcp_output_addr, multicast_addr_parsed) {
+    if let (Some(tcpout), Some(multicast_parsed)) =
+        (args.tcp_output_addr, args.multicast_addr_parsed)
+    {
         threads.push(listen_websocket_clients(multicast_parsed, tcpout));
     }
 
     threads
 }
 
-struct ReceiverArgs {
-    dbpath: Option<PathBuf>,
-    tcp_connect_addr: Option<String>,
-    tcp_listen_addr: Option<String>,
-    udp_listen_addr: String,
-    multicast_addr_parsed: Option<String>,
-    multicast_addr_rawdata: Option<String>,
-    tcp_output_addr: Option<String>,
-    udp_output_addr: Option<String>,
-    dynamic_msg_bufsize: Option<usize>,
-    static_msg_bufsize: Option<usize>,
-    tee: bool,
-}
-
-fn parse_args() -> Result<ReceiverArgs, pico_args::Error> {
-    let mut pargs = Arguments::from_env();
-    if pargs.contains(["-h", "--help"]) || pargs.clone().finish().is_empty() {
-        //print!("{}", HELP);
-        exit(0);
-    }
-    fn parse_path(s: &OsStr) -> Result<PathBuf, &'static str> {
-        Ok(s.into())
-    }
-
-    let args = ReceiverArgs {
-        dbpath: pargs.opt_value_from_os_str("--path", parse_path)?,
-        tcp_connect_addr: pargs.opt_value_from_str("--tcp-connect-addr")?,
-        tcp_listen_addr: pargs.opt_value_from_str("--tcp-listen-addr")?,
-        udp_listen_addr: pargs.value_from_str("--udp-listen-addr")?,
-        multicast_addr_parsed: pargs.opt_value_from_str("--multicast-addr-parsed")?,
-        multicast_addr_rawdata: pargs.opt_value_from_str("--multicast-addr-rawdata")?,
-        tcp_output_addr: pargs.opt_value_from_str("--tcp-output-addr")?,
-        udp_output_addr: pargs.opt_value_from_str("--udp-output-addr")?,
-        dynamic_msg_bufsize: pargs
-            .opt_value_from_str("--dynamic-msg-bufsize")?
-            .map(|s: String| s.parse().unwrap()),
-        static_msg_bufsize: pargs
-            .opt_value_from_str("--static-msg-bufsize")?
-            .map(|s: String| s.parse().unwrap()),
-        tee: pargs.contains(["-t", "--tee"]),
-    };
-
-    let remaining = pargs.finish();
-    if !remaining.is_empty() {
-        println!("Warning: unused arguments {:?}", remaining)
-    }
-
-    Ok(args)
-}
-
 pub fn main() {
     let args = parse_args().unwrap();
 
-    let threads = start_receiver(
-        args.dbpath,
-        args.tcp_connect_addr,
-        args.tcp_listen_addr,
-        args.udp_listen_addr,
-        args.multicast_addr_parsed,
-        args.multicast_addr_rawdata,
-        args.tcp_output_addr,
-        args.udp_output_addr,
-        args.dynamic_msg_bufsize,
-        args.static_msg_bufsize,
-        args.tee,
-    );
+    let threads = start_receiver(args);
+
     for thread in threads {
         thread.join().unwrap();
     }

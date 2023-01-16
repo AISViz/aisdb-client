@@ -75,7 +75,7 @@ Create a new text file ``./ais_rcv.service`` with contents:
 
     [Unit]
     Description="AISDB Receiver"
-    After=network.target
+    After=network-online.target
 
     [Service]
     Type=simple
@@ -94,7 +94,7 @@ Create a new text file ``./ais_upstream.service`` with contents:
 
     [Unit]
     Description="AISDB Dispatcher"
-    After=network.target
+    After=network-online.target
 
     [Service]
     Type=simple
@@ -116,6 +116,7 @@ Next, link and enable the services on the rpi. This will allow the receiver to b
     sudo systemctl link ./ais_rcv.service
     sudo systemctl link ./ais_upstream.service
     sudo systemctl daemon-reload
+    sudo systemctl enable systemd-networkd-wait-online.service
 
     sudo systemctl enable ais_rcv
     sudo systemctl start ais_rcv
