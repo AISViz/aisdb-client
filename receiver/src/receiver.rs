@@ -282,7 +282,13 @@ fn decode_multicast(
 /// Accepts websocket connections from downstream clients.
 /// Listens for incoming UDP multicast packets, and forward
 /// packets downstream to connected clients
-fn handle_websocket_client(downstream: TcpStream, multicast_addr: String) -> JoinHandle<()> {
+fn handle_websocket_client(
+    downstream: TcpStream,
+    multicast_addr: String,
+    tee: bool,
+) -> JoinHandle<()> {
+    let mut output_buffer = BufWriter::new(stdout());
+
     println!("forwarding {}UDP to downstream TCP clients", multicast_addr);
     spawn(move || {
         let (_multicast_addr, multicast_socket) =
@@ -301,6 +307,12 @@ fn handle_websocket_client(downstream: TcpStream, multicast_addr: String) -> Joi
                         eprintln!("dropping client: {} {}", remote_addr, e);
                         return;
                     }
+                    if tee {
+                        let _o = output_buffer
+                            .write(&buf[0..count_input])
+                            .expect("writing to output buffer");
+                        output_buffer.flush().unwrap();
+                    }
                 }
                 Err(err) => {
                     eprintln!("stream_server upstream: got an error: {}", err);
@@ -313,7 +325,11 @@ fn handle_websocket_client(downstream: TcpStream, multicast_addr: String) -> Joi
 
 /// bind websocket to tcp_output_addr
 /// listens on a UDP channel and forwards to connected websocket clients
-fn listen_websocket_clients(udp_input_addr: String, tcp_output_addr: String) -> JoinHandle<()> {
+fn listen_websocket_clients(
+    udp_input_addr: String,
+    tcp_output_addr: String,
+    tee_parsed: bool,
+) -> JoinHandle<()> {
     spawn(move || {
         println!("spawning websocket listener on {}/tcp", tcp_output_addr);
         let listener = match TcpListener::bind(tcp_output_addr) {
@@ -323,7 +339,7 @@ fn listen_websocket_clients(udp_input_addr: String, tcp_output_addr: String) -> 
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    handle_websocket_client(stream, udp_input_addr.clone());
+                    handle_websocket_client(stream, udp_input_addr.clone(), tee_parsed);
                 }
                 Err(e) => {
                     eprintln!("{:?}", e.raw_os_error());
@@ -368,7 +384,16 @@ pub fn start_receiver(args: ReceiverArgs) -> Vec<JoinHandle<()>> {
     if let (Some(tcpout), Some(multicast_parsed)) =
         (args.tcp_output_addr, args.multicast_addr_parsed)
     {
-        threads.push(listen_websocket_clients(multicast_parsed, tcpout));
+        #[cfg(not(debug_assertions))]
+        let tee_parsed = false;
+        #[cfg(debug_assertions)]
+        let tee_parsed = args.tee;
+
+        threads.push(listen_websocket_clients(
+            multicast_parsed,
+            tcpout,
+            tee_parsed,
+        ));
     }
 
     threads
