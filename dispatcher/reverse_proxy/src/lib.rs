@@ -153,14 +153,15 @@ pub fn reverse_proxy_udp(udp_input_addr: String, udp_output_addr: String) -> Joi
         let mut buf = [0u8; BUFSIZE];
         loop {
             match listen_socket.recv_from(&mut buf[0..]) {
-                Ok((c, _remote_addr)) => {
+                Ok((c, remote_addr)) => {
                     if c == 0 {
-                        panic!("{}", outaddr);
+                        eprintln!("got message with size 0 from upstream: {}", remote_addr);
+                    } else {
+                        let c_out = output_socket
+                            .send_to(&buf[0..c], outaddr)
+                            .expect("forwarding UDP downstream");
+                        assert!(c == c_out);
                     }
-                    let c_out = output_socket
-                        .send_to(&buf[0..c], outaddr)
-                        .expect("forwarding UDP downstream");
-                    assert!(c == c_out);
                 }
                 Err(err) => {
                     eprintln!("{}:reverse_proxy: error {}", addr, err);
