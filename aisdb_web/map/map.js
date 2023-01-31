@@ -1,31 +1,171 @@
 /** @module map */
 window.searcharea = null;
+/*
+    { CustomBingMaps },
+    { default: Feature },
+  // { default: View },
+    { default: GeoJSON },
+    { default: Point },
+  // { defaults },
+    { default: DragBox },
+    { default: Draw },
+    { default: Heatmap },
+    { default: TileLayer },
+    { default: VectorLayer },
+  // { fromLonLat },
+    { default: VectorSource },
+  // { default : MousePosition },
+  // { createStringXY },
+  // { defaults: defaultControls },
+  // { default: WebGLPointsLayer },
+  ] = await Promise.all([
+    import('./clientsocket.js'),
+    import('./selectform.js'),
+  // import('ol/Map'),
+    import('ol/ol.css'),
+  // import('ol/source/BingMaps'),
+    import('./tileserver.js'),
+    import('ol/Feature'),
+  // import('ol/View'),
+    import('ol/format/GeoJSON'),
+    import('ol/geom/Point'),
+  // import('ol/interaction'),
+    import('ol/interaction/DragBox'),
+    import('ol/interaction/Draw'),
+    import('ol/layer/Heatmap'),
+    import('ol/layer/Tile'),
+    import('ol/layer/Vector'),
+  // import('ol/proj'),
+    import('ol/source/Vector'),
+    */
+import 'ol/ol.css';
 
+import { default as Heatmap } from 'ol/layer/Heatmap';
+import { default as TileLayer } from 'ol/layer/Tile';
+import { default as VectorLayer } from 'ol/layer/Vector';
+import { default as VectorSource } from 'ol/source/Vector';
+
+import View from 'ol/View';
+import { fromLonLat } from 'ol/proj';
+import { default as _Map } from 'ol/Map';
+import { defaults } from 'ol/interaction';
+// import('ol/control/MousePosition'),
+import MousePosition from 'ol/control/MousePosition';
+import { defaults as defaultControls } from 'ol/control';
+import { createStringXY } from 'ol/coordinate';
+
+import { CustomOSM, CustomBingMaps } from './tileserver.js';
+import { polyStyle, vesselStyles } from './palette.js';
 
 /** status message div item */
 const statusdiv = document.getElementById('status-div');
 
+/** contains geometry for map selection feature */
+let drawSource = new VectorSource({ wrapX: false });
+/** contains drawSource for map selection layer */
+let drawLayer = new VectorLayer({ source: drawSource, zIndex: 5 });
+
+/** contains geometry for map zone polygons */
+let polySource = new VectorSource({});
+/** contains polySource for map zone polygons */
+let polyLayer = new VectorLayer({
+  source: polySource,
+  style: polyStyle, zIndex: 1,
+});
+
+/** contains map vessel line geometries */
+let lineSource = new VectorSource({});
+/** contains map lineSource layer */
+let lineLayer = new VectorLayer({
+  source: lineSource,
+  style: vesselStyles.Unspecified,
+  zIndex: 3,
+});
+
+let pointSource = new VectorSource({});
+let pointLayer = new VectorLayer({
+  source: pointSource,
+  zIndex: 4,
+});
+
+/** map heatmap source */
+let heatSource = new VectorSource({ });
+/** map heatmap layer */
+let heatLayer = new Heatmap({
+  source: heatSource,
+  blur: 33,
+  radius: 2.5,
+  zIndex: 2,
+});
+
+/** map window
+ * @param {string} target target HTML item by ID
+ * @param {Array} layers map layers to display
+ * @param {ol/View) view default map view positioning
+ */
+/** ol map TileLayer */
+// the following env var will be set to "1" by the build script
+// if it detects the presence of env var $BINGMAPSKEY at build time
+let mapLayer;
+if (import.meta.env.VITE_BINGMAPTILES !== undefined &&
+  import.meta.env.VITE_BINGMAPTILES !== '' &&
+  import.meta.env.VITE_BINGMAPTILES !== '0') {
+  mapLayer = new TileLayer({
+    source: new CustomBingMaps({}),
+    zIndex: 0,
+  });
+} else {
+  // fall back to OSM if no API token was found by the build script
+  // let { CustomOSM } = await import ('./tileserver');
+  mapLayer = new TileLayer({ source: new CustomOSM({}) });
+}
 
 /* map objects */
 let dragBox = null;
 let draw = null;
-let map = null;
-let mapview = null;
+// let map = null;
+// let mapview = null;
+
+/** default map position
+ * @see module:url
+ */
+let mapview = new View({
+  center: fromLonLat([ -63.5, 44.6 ]), // east
+  // center: proj.fromLonLat([-123.0, 49.2]), //west
+  // center: proj.fromLonLat([ -100, 57 ]), // canada
+  zoom: 11,
+});
+const mousePositionControl = new MousePosition({
+  coordinateFormat: createStringXY(4),
+  projection: 'EPSG:4326',
+});
+let map = new _Map({
+  target: 'mapDiv', // div item in index.html
+  layers: [ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ],
+  view: mapview,
+  interactions: defaults({ doubleClickZoom:false }),
+  controls: defaultControls().extend([ mousePositionControl ]),
+});
 
 /* map geometry layer sources */
+/*
 let drawSource = null;
 let heatSource = null;
 let lineSource = null;
 let pointSource = null;
 let polySource = null;
+*/
 
 /* map layers */
+/*
 let drawLayer = null;
 let heatLayer = null;
 let lineLayer = null;
 let mapLayer = null;
 let pointLayer = null;
 let polyLayer = null;
+*/
+
 
 /* processing functions for incoming websocket data */
 let newHeatmapFeatures = null;
@@ -84,48 +224,48 @@ async function init_maplayers() {
   let [
     { hostname },
     { set_track_style },
-    { default: _Map },
-    _css,
+    // { default: _Map },
+    // _css,
     // { default: BingMaps },
-    { CustomBingMaps },
+    // { CustomBingMaps },
     { default: Feature },
-    { default: View },
+    // { default: View },
     { default: GeoJSON },
     { default: Point },
-    { defaults },
+    // { defaults },
     { default: DragBox },
     { default: Draw },
-    { default: Heatmap },
-    { default: TileLayer },
-    { default: VectorLayer },
-    { fromLonLat },
-    { default: VectorSource },
-    { default : MousePosition },
-    { createStringXY },
-    { defaults: defaultControls },
+    // { default: Heatmap },
+    // { default: TileLayer },
+    // { default: VectorLayer },
+    // { fromLonLat },
+    // { default: VectorSource },
+    // { default : MousePosition },
+    // { createStringXY },
+    // { defaults: defaultControls },
     // { default: WebGLPointsLayer },
   ] = await Promise.all([
     import('./clientsocket.js'),
     import('./selectform.js'),
-    import('ol/Map'),
-    import('ol/ol.css'),
+    // import('ol/Map'),
+    // import('ol/ol.css'),
     // import('ol/source/BingMaps'),
-    import('./tileserver.js'),
+    // import('./tileserver.js'),
     import('ol/Feature'),
-    import('ol/View'),
+    // import('ol/View'),
     import('ol/format/GeoJSON'),
     import('ol/geom/Point'),
-    import('ol/interaction'),
+    // import('ol/interaction'),
     import('ol/interaction/DragBox'),
     import('ol/interaction/Draw'),
-    import('ol/layer/Heatmap'),
-    import('ol/layer/Tile'),
-    import('ol/layer/Vector'),
-    import('ol/proj'),
-    import('ol/source/Vector'),
-    import('ol/control/MousePosition'),
-    import('ol/coordinate'),
-    import('ol/control'),
+    // import('ol/layer/Heatmap'),
+    // import('ol/layer/Tile'),
+    // import('ol/layer/Vector'),
+    // import('ol/proj'),
+    // import('ol/source/Vector'),
+    // import('ol/control/MousePosition'),
+    // import('ol/coordinate'),
+    // import('ol/control'),
     // import('ol/layer/WebGLPoints'),
   ]);
 
@@ -138,83 +278,28 @@ async function init_maplayers() {
     vesseltypes,
   } = await import('./palette');
 
-  /** contains geometry for map selection feature */
-  drawSource = new VectorSource({ wrapX: false });
-  /** contains drawSource for map selection layer */
-  drawLayer = new VectorLayer({ source: drawSource, zIndex: 5 });
-
-  /** contains geometry for map zone polygons */
-  polySource = new VectorSource({});
-  /** contains polySource for map zone polygons */
-  polyLayer = new VectorLayer({
-    source: polySource,
-    style: polyStyle, zIndex: 1,
-  });
-
-  /** contains map vessel line geometries */
-  lineSource = new VectorSource({});
-  /** contains map lineSource layer */
-  lineLayer = new VectorLayer({
-    source: lineSource,
-    style: vesselStyles.Unspecified,
-    zIndex: 3,
-  });
-
-  pointSource = new VectorSource({});
-  pointLayer = new VectorLayer({
-    source: pointSource,
-    zIndex: 4,
-  });
-
-  /** map heatmap source */
-  heatSource = new VectorSource({ });
-  /** map heatmap layer */
-  heatLayer = new Heatmap({
-    source: heatSource,
-    blur: 33,
-    radius: 2.5,
-    zIndex: 2,
-  });
-
-
   /** default map position
    * @see module:url
    */
+  /*
   mapview = new View({
     center: fromLonLat([ -63.5, 44.6 ]), // east
     // center: proj.fromLonLat([-123.0, 49.2]), //west
     // center: proj.fromLonLat([ -100, 57 ]), // canada
     zoom: 11,
   });
+  */
 
-
-  /** map window
-   * @param {string} target target HTML item by ID
-   * @param {Array} layers map layers to display
-   * @param {ol/View) view default map view positioning
-   */
-  /** ol map TileLayer */
-  // the following env var will be set to "1" by the build script
-  // if it detects the presence of env var $BINGMAPSKEY at build time
-  if (import.meta.env.VITE_BINGMAPTILES !== undefined &&
-    import.meta.env.VITE_BINGMAPTILES !== '' &&
-    import.meta.env.VITE_BINGMAPTILES !== '0') {
-    mapLayer = new TileLayer({
-      source: new CustomBingMaps({}),
-      zIndex: 0,
-    });
-  } else {
-    // fall back to OSM if no API token was found by the build script
-    let { CustomOSM } = await import ('./tileserver');
-    mapLayer = new TileLayer({ source: new CustomOSM({}) });
-  }
 
   /* map interactions */
+  /*
   const mousePositionControl = new MousePosition({
     coordinateFormat: createStringXY(4),
     projection: 'EPSG:4326',
   });
+  */
 
+  /*
   map = new _Map({
     target: 'mapDiv', // div item in index.html
     layers: [ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ],
@@ -222,6 +307,16 @@ async function init_maplayers() {
     interactions: defaults({ doubleClickZoom:false }),
     controls: defaultControls().extend([ mousePositionControl ]),
   });
+  */
+  /*
+  [ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ].forEach((layer) => {
+    return map.addLayer(layer);
+  });
+  // interactions: defaults({ doubleClickZoom:false }),
+  map.addInteraction(defaults({ doubleClickZoom: false }));
+  // controls: defaultControls().extend([ mousePositionControl ]),
+  map.addControl(defaultControls().extend([ mousePositionControl ]));
+  */
 
 
   /* cursor styling: indicate to the user that we are selecting an area */
@@ -390,6 +485,7 @@ async function init_maplayers() {
     }, { layerFilter: pointermoveLayerFilterCallback }
     );
 
+
     // show metadata for selected feature
     if (selected) {
       statusdiv.innerHTML = selected.get('meta_str');
@@ -415,6 +511,7 @@ async function init_maplayers() {
   });
 }
 
+map.updateSize();
 
 export {
   dragBox,
