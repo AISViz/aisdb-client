@@ -81,6 +81,8 @@ Create a new text file ``./ais_rcv.service`` with contents:
     Type=simple
     User=ais
     ExecStart=/home/ais/.cargo/bin/mproxy-client --path /dev/ttyACM0 --server-addr '[::1]:9901'
+    Restart=always
+    RestartSec=30
 
     [Install]
     WantedBy=default.target
@@ -100,6 +102,8 @@ Create a new text file ``./ais_upstream.service`` with contents:
     Type=simple
     User=ais
     ExecStart=/home/ais/.cargo/bin/mproxy-forward --udp-listen-addr '[::]:9901' --tcp-connect-addr 'aisdb.meridian.cs.dal.ca:9920'
+    Restart=always
+    RestartSec=30
 
     [Install]
     WantedBy=default.target

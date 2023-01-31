@@ -12,18 +12,19 @@ navigator.serviceWorker.getRegistrations().then((registrations) => {
   }
 });
 
-import { init_maplayers } from './map';
+// import { init_maplayers } from './map';
 
-(async () => {
-  // let { init_maplayers } = await import('./map');
+window.addEventListener('load', async () => {
   let [
     { createVesselMenuItem, vesselmenu, vesseltypeselect },
     { vessellabels },
   ] = await Promise.all([
     import('./selectform'),
     import('./palette'),
-    init_maplayers(),
   ]);
+
+  let { init_maplayers } = await import('./map');
+  init_maplayers();
 
   createVesselMenuItem('All', 'All', '⋀');
   for (let label of vessellabels) {
@@ -35,4 +36,4 @@ import { init_maplayers } from './map';
   };
 
   await import('./livestream.js');
-})();
+});
