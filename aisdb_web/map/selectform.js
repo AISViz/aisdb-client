@@ -361,8 +361,6 @@ function createVesselMenuItem(label, value, symbol) {
   vesselmenu.appendChild(opt);
 }
 
-map.updateSize();
-
 export {
   clearbtn,
   createVesselMenuItem,

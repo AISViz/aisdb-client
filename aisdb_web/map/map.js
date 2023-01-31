@@ -511,8 +511,6 @@ async function init_maplayers() {
   });
 }
 
-map.updateSize();
-
 export {
   dragBox,
   draw,

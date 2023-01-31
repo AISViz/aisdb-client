@@ -37,6 +37,6 @@ window.addEventListener('load', async () => {
 
   await import('./livestream.js');
 
-  map.render();
   map.updateSize();
+  map.renderSync();
 });
