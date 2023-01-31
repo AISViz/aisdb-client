@@ -14,6 +14,7 @@ navigator.serviceWorker.getRegistrations().then((registrations) => {
 });
 */
 
+import 'ol/ol.css';
 import { init_maplayers, map } from './map';
 
 window.addEventListener('load', async () => {

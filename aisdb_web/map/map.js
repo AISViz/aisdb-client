@@ -38,7 +38,7 @@ window.searcharea = null;
   // import('ol/proj'),
     import('ol/source/Vector'),
     */
-import 'ol/ol.css';
+// import 'ol/ol.css';
 
 import { default as Heatmap } from 'ol/layer/Heatmap';
 import { default as TileLayer } from 'ol/layer/Tile';
