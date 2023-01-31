@@ -1,3 +1,4 @@
+/*
 if ('caches' in window) {
   caches.keys()
     .then((keyList) => {
@@ -11,11 +12,12 @@ navigator.serviceWorker.getRegistrations().then((registrations) => {
     registration.unregister();
   }
 });
+*/
 
-// import { init_maplayers, map } from './map';
+import { init_maplayers, map } from './map';
 
 window.addEventListener('load', async () => {
-  let { init_maplayers } = await import('./map');
+  // let { init_maplayers } = await import('./map');
   await init_maplayers();
 
   let [
@@ -37,6 +39,5 @@ window.addEventListener('load', async () => {
 
   await import('./livestream.js');
 
-  // map.updateSize();
-  // map.renderSync();
+  await map.render();
 });

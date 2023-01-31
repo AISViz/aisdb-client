@@ -222,7 +222,7 @@ async function setSearchAreaFromSelected() {
 /** initialize map layer and associated imports dynamically */
 async function init_maplayers() {
   let [
-    { hostname },
+    // { hostname },
     { set_track_style },
     // { default: _Map },
     // _css,
@@ -245,7 +245,7 @@ async function init_maplayers() {
     // { defaults: defaultControls },
     // { default: WebGLPointsLayer },
   ] = await Promise.all([
-    import('./clientsocket.js'),
+    // import('./clientsocket.js'),
     import('./selectform.js'),
     // import('ol/Map'),
     // import('ol/ol.css'),
@@ -271,10 +271,10 @@ async function init_maplayers() {
 
   let {
     dragBoxStyle,
-    polyStyle,
+    // polyStyle,
     polySelectStyle,
     selectStyle,
-    vesselStyles,
+    // vesselStyles,
     vesseltypes,
   } = await import('./palette');
 
