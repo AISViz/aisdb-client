@@ -12,11 +12,11 @@ navigator.serviceWorker.getRegistrations().then((registrations) => {
   }
 });
 
-// import { init_maplayers } from './map';
+// import { init_maplayers, map } from './map';
 
 window.addEventListener('load', async () => {
-  let { init_maplayers, map } = await import('./map');
-  init_maplayers();
+  let { init_maplayers } = await import('./map');
+  await init_maplayers();
 
   let [
     { createVesselMenuItem, vesselmenu, vesseltypeselect },
@@ -37,6 +37,6 @@ window.addEventListener('load', async () => {
 
   await import('./livestream.js');
 
-  map.updateSize();
-  map.renderSync();
+  // map.updateSize();
+  // map.renderSync();
 });
