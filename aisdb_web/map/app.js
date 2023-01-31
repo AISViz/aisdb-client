@@ -15,6 +15,9 @@ navigator.serviceWorker.getRegistrations().then((registrations) => {
 // import { init_maplayers } from './map';
 
 window.addEventListener('load', async () => {
+  let { init_maplayers } = await import('./map');
+  init_maplayers();
+
   let [
     { createVesselMenuItem, vesselmenu, vesseltypeselect },
     { vessellabels },
@@ -22,9 +25,6 @@ window.addEventListener('load', async () => {
     import('./selectform'),
     import('./palette'),
   ]);
-
-  let { init_maplayers } = await import('./map');
-  init_maplayers();
 
   createVesselMenuItem('All', 'All', '⋀');
   for (let label of vessellabels) {
