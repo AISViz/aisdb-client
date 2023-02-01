@@ -42,4 +42,8 @@ window.addEventListener('load', async () => {
   await import('./livestream.js');
 
   // await map.render();
+  map.getLayers().forEach((layer) => {
+    layer.getSource().refresh();
+  });
+  console.log(map.getLayers()[0].getFeatures());
 });
