@@ -15,19 +15,20 @@ navigator.serviceWorker.getRegistrations().then((registrations) => {
 */
 
 import 'ol/ol.css';
-import { init_maplayers, map } from './map';
+import { init_maplayers } from './map';
 
 window.addEventListener('load', async () => {
-  // let { init_maplayers } = await import('./map');
-  await init_maplayers();
+  let map = await init_maplayers();
 
   let [
-    { createVesselMenuItem, vesselmenu, vesseltypeselect },
+    { createVesselMenuItem, mapHook, vesselmenu, vesseltypeselect },
     { vessellabels },
   ] = await Promise.all([
     import('./selectform'),
     import('./palette'),
   ]);
+
+  await mapHook(map);
 
   createVesselMenuItem('All', 'All', '⋀');
   for (let label of vessellabels) {
@@ -40,5 +41,5 @@ window.addEventListener('load', async () => {
 
   await import('./livestream.js');
 
-  await map.render();
+  // await map.render();
 });

@@ -1,14 +1,10 @@
+import { tileserver_hostname } from './constants.js';
+
 import { jsonp as requestJSONP } from 'ol/net';
 import { get as getProjection } from 'ol/proj';
 import BingMaps from 'ol/source/BingMaps';
 import OSM from 'ol/source/OSM';
 
-// import { hostname } from './clientsocket.js';
-
-let hostname = import.meta.env.VITE_TILESERVER;
-if (hostname === undefined) {
-  console.log('hostname undefined');
-}
 
 class CustomOSM extends OSM {
   /**
@@ -23,11 +19,11 @@ class CustomOSM extends OSM {
       options.crossOrigin !== undefined ? options.crossOrigin : 'anonymous';
 
     let url = null;
-    // if (hostname.includes('127.0.0.1')) {
-    if (hostname === '' || hostname === '/') {
+    // if (tileserver_hostname.includes('127.0.0.1')) {
+    if (tileserver_hostname === '' || tileserver_hostname === '/') {
       url = options.url !== undefined ? options.url : '/{z}/{x}/{y}.png';
     } else {
-      url = options.url !== undefined ? options.url : `https://${hostname}/{z}/{x}/{y}.png`;
+      url = options.url !== undefined ? options.url : `https://${tileserver_hostname}/{z}/{x}/{y}.png`;
     }
 
     super({
@@ -65,11 +61,11 @@ class CustomBingMaps extends BingMaps{
       state: 'loading',
       tileLoadFunction: function (imageTile, src) {
         let [ _target, tiles, jpeg, req ] = src.replace('https://', '').split(/[/?]+/);
-        // if (hostname.includes('127.0.0.1')) {
-        if (hostname === '' || hostname === '/') {
+        // if (tileserver_hostname.includes('127.0.0.1')) {
+        if (tileserver_hostname === '' || tileserver_hostname === '/') {
           src = `/${tiles}/${jpeg}?${req}`;
         } else {
-          src = `https://${hostname}/${tiles}/${jpeg}?${req}`;
+          src = `https://${tileserver_hostname}/${tiles}/${jpeg}?${req}`;
         }
         imageTile.src_ = src;
         imageTile.getImage().src = src;
@@ -91,10 +87,10 @@ class CustomBingMaps extends BingMaps{
     // this.imagerySet_}?uriScheme=https&include=ImageryProviders&key=${
     // this.apiKey_}&c=${this.culture_}`;
     let url = null;
-    if (hostname === '' || hostname === '/') {
+    if (tileserver_hostname === '' || tileserver_hostname === '/') {
       url = '';
     } else {
-      url = `https://${hostname}`;
+      url = `https://${tileserver_hostname}`;
     }
     url = `${url }/REST/v1/Imagery/Metadata/${this.imagerySet_}?uriScheme=https&include=ImageryProviders&c=${this.culture_}`;
 
