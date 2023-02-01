@@ -1,9 +1,9 @@
-import { tileserver_hostname } from './constants.js';
-
 import { jsonp as requestJSONP } from 'ol/net';
 import { get as getProjection } from 'ol/proj';
 import BingMaps from 'ol/source/BingMaps';
 import OSM from 'ol/source/OSM';
+
+import { tileserver_hostname } from './constants.js';
 
 
 class CustomOSM extends OSM {

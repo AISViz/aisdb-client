@@ -181,7 +181,7 @@ async function init_maplayers() {
 
   let map = new _Map({
     target: 'mapDiv', // div item in index.html
-    layers: [ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ],
+    // layers: [ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ],
     view: mapview,
     interactions: defaultInteractions({ doubleClickZoom:false }),
     controls: defaultControls().extend([ mousePositionControl ]),
@@ -378,6 +378,10 @@ async function init_maplayers() {
     }, { layerFilter: clickLayerFilterCallback }
     );
   });
+
+
+  // layers: [ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ],
+  map.setLayers([ mapLayer, polyLayer, lineLayer, heatLayer, pointLayer, drawLayer ]);
 
   return map;
 }
