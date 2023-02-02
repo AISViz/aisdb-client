@@ -142,7 +142,11 @@ fn filter_insert_vesseldata(
             //
             None
         }
-        _ => None,
+        _other => {
+            //#[cfg(debug_assertions)]
+            //println!("discarding {:?}", _other);
+            None
+        }
     }
 }
 
@@ -167,6 +171,7 @@ fn process_message(
         if let Some(txt) =
             filter_insert_vesseldata(msg, parser, insert_db, dynamic_msgs, static_msgs)
         {
+            //println!("txt: {}", txt);
             msgs.push(txt);
         }
     }
@@ -252,6 +257,9 @@ fn decode_multicast(
                                 socket_raw
                                     .send_to(&buf[0..c], addr_raw)
                                     .expect("sending to UDP listener via multicast");
+
+                                //#[cfg(debug_assertions)]
+                                //println!("sent {} to target_raw", c);
                             }
 
                             if let Some((addr_parsed, socket_parsed)) = &target_parsed {
@@ -289,10 +297,15 @@ fn handle_websocket_client(
 ) -> JoinHandle<()> {
     let mut output_buffer = BufWriter::new(stdout());
 
-    println!("forwarding {}UDP to downstream TCP clients", multicast_addr);
     spawn(move || {
         let (_multicast_addr, multicast_socket) =
-            target_socket_interface(&multicast_addr).expect("binding socket");
+            upstream_socket_interface(multicast_addr).expect("binding socket");
+
+        println!(
+            "forwarding: {} UDP -> {:?} WEBSOCKET",
+            _multicast_addr,
+            downstream.peer_addr().unwrap()
+        );
 
         let mut buf = [0u8; 32768];
         let mut websocket =
@@ -301,6 +314,8 @@ fn handle_websocket_client(
         loop {
             match multicast_socket.recv_from(&mut buf[0..]) {
                 Ok((count_input, remote_addr)) => {
+                    //#[cfg(debug_assertions)]
+                    //println!("RX: {}", String::from_utf8_lossy(&buf[0..count_input]));
                     if let Err(e) = websocket.write_message(Message::Text(
                         String::from_utf8(buf[0..count_input].to_vec()).unwrap(),
                     )) {
