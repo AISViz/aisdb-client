@@ -12,7 +12,6 @@ import { defaults as defaultControls } from 'ol/control';
 import { defaults as defaultInteractions } from 'ol/interaction';
 import { fromLonLat } from 'ol/proj';
 
-import { CustomOSM, CustomBingMaps } from './tileserver.js';
 import { polyStyle, vesselStyles } from './palette.js';
 import { use_bingmaps } from './constants.js';
 
@@ -169,13 +168,14 @@ async function init_maplayers() {
   // if it detects the presence of env var $BINGMAPSKEY at build time
   let mapLayer = null;
   if (use_bingmaps !== undefined && use_bingmaps !== '' && use_bingmaps !== '0') {
+    let { CustomBingMaps } = await import('./tileserver.js');
     mapLayer = new TileLayer({
       source: new CustomBingMaps({}),
       zIndex: 0,
     });
   } else {
     // fall back to OSM if no API token was found by the build script
-    // let { CustomOSM } = await import ('./tileserver');
+    let { CustomOSM } = await import('./tileserver.js');
     mapLayer = new TileLayer({ source: new CustomOSM({}) });
   }
 
