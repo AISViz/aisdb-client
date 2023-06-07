@@ -85,18 +85,17 @@ wasm-assets:
   image: 
     name: node:latest
   before_script:
-    - mkdir -p /pkg
     - apt update -y && apt-get install clang -y
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --profile=minimal --target=wasm32-unknown-unknown
     - npm install -g wasm-pack
   script:
     - cd client_webassembly
-    - source ~/.cargo/env && wasm-pack build --target=web --release --out-dir=$CI_PROJECT_DIR/pkg
+    - source ~/.cargo/env && wasm-pack build --target=web --release --out-dir=$CI_PROJECT_DIR/aisdb_web/map/pkg
     - cd ../aisdb_web 
     - npm install
     - cd map 
-    - npx vite build --outDir=$CI_PROJECT_DIR/dist_map
-    - VITE_BINGMAPTILES=1 npx vite build --outDir=$CI_PROJECT_DIR/dist_map_bingmaps
+    - npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map
+    - VITE_BINGMAPTILES=1 npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map_bingmaps
   only:
     refs:
       - master
@@ -108,9 +107,9 @@ wasm-assets:
   artifacts:
     when: always
     paths: 
-      - pkg
-      - dist_map
-      - dist_map_bingmaps
+      - aisdb_web/map/pkg
+      - aisdb_web/dist_map
+      - aisdb_web/dist_map_bingmaps
 
 
 variables:
