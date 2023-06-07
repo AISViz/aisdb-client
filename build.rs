@@ -6,13 +6,13 @@ use reqwest::blocking::get;
 use wasm_opt::OptimizationOptions;
 
 fn main() {
-    println!("cargo:rerun-if-changed=./aisdb_web/*.js");
-    println!("cargo:rerun-if-changed=./aisdb_web/*.json");
-    println!("cargo:rerun-if-changed=./aisdb_web/map/*.css");
-    println!("cargo:rerun-if-changed=./aisdb_web/map/*.html");
-    println!("cargo:rerun-if-changed=./aisdb_web/map/*.js");
-    println!("cargo:rerun-if-changed=./aisdb_web/map/*.ts");
-    println!("cargo:rerun-if-changed=./client_webassembly/src/*");
+    //println!("cargo:rerun-if-changed=./aisdb_web/*.js");
+    //println!("cargo:rerun-if-changed=./aisdb_web/*.json");
+    //println!("cargo:rerun-if-changed=./aisdb_web/map/*.css");
+    //println!("cargo:rerun-if-changed=./aisdb_web/map/*.html");
+    //println!("cargo:rerun-if-changed=./aisdb_web/map/*.js");
+    //println!("cargo:rerun-if-changed=./aisdb_web/map/*.ts");
+    //println!("cargo:rerun-if-changed=./client_webassembly/src/*");
 
     // download web assets from gitlab CD artifacts
     let branch = "artifacts_test";
@@ -31,10 +31,11 @@ fn main() {
 
     // unzip web assets into project
     let unzip = Command::new("unzip")
-        .arg("-u")
+        .arg("-o")
         .arg("artifacts.zip")
         .output()
         .expect("unzip command");
+    eprintln!("{}", String::from_utf8_lossy(&unzip.stderr[..]));
     assert!(unzip.status.code().unwrap() == 0);
 
     // remove zipfile

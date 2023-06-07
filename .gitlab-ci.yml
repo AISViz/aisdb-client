@@ -89,8 +89,13 @@ wasm-assets:
     - cd ../aisdb_web 
     - npm install
     - cd map 
-    - VITE_DISABLE_SSL_DB=1 VITE_DISABLE_STREAM=1 VITE_AISDBHOST=localhost VITE_AISDBPORT=9924 npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map
-    - VITE_DISABLE_SSL_DB=1 VITE_DISABLE_STREAM=1 VITE_AISDBHOST=localhost VITE_AISDBPORT=9924 VITE_BINGMAPTILES=1 npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map_bingmaps
+    - export VITE_DISABLE_SSL_DB=1 
+    - export VITE_DISABLE_STREAM=1 
+    - export VITE_AISDBHOST=localhost 
+    - export VITE_AISDBPORT=9924 
+    - npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map
+    - export VITE_BINGMAPTILES=1 
+    - npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map_bingmaps
   # artifacts can be downloaded here:
   # https://git-dev.cs.dal.ca/api/v4/projects/132/jobs/artifacts/<branch_name>/download?job=wasm-assets
   artifacts:
