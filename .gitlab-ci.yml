@@ -17,7 +17,7 @@ stages:
   - publish
 
 
-web-assets:
+wasm-assets:
   stage: artifacts
   #rules:
   #  - if: $CI_COMMIT_TAG
@@ -42,7 +42,7 @@ web-assets:
     - export VITE_BINGMAPTILES=1 
     - npx vite build --outDir=$CI_PROJECT_DIR/aisdb_web/dist_map_bingmaps
   # artifacts can be downloaded here:
-  # https://git-dev.cs.dal.ca/api/v4/projects/132/jobs/artifacts/<branch_name>/download?job=web-assets
+  # https://git-dev.cs.dal.ca/api/v4/projects/132/jobs/artifacts/<branch_name>/download?job=wasm-assets
   artifacts:
     when: always
     paths: 
@@ -53,7 +53,7 @@ web-assets:
 
 python-test:
   dependencies:
-    - web-assets
+    - wasm-assets
   stage: python-test
   variables:
     #VIRTUAL_ENV: "/home/ais_env/env"

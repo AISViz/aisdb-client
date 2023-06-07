@@ -17,7 +17,7 @@ fn main() {
     // download web assets from gitlab CD artifacts
     let branch = "artifacts_test";
     let url = format!(
-        "https://git-dev.cs.dal.ca/api/v4/projects/132/jobs/artifacts/{}/download?job=web-assets",
+        "https://git-dev.cs.dal.ca/api/v4/projects/132/jobs/artifacts/{}/download?job=wasm-assets",
         branch
     );
     let mut zipfile = File::create("artifacts.zip").expect("creating empty zipfile");
