@@ -81,7 +81,8 @@ wasm-assets:
     name: rust:slim
   before_script:
     - mkdir -p /pkg
-    - cargo install wasm-pack
+    #- cargo install wasm-pack
+    - curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
   script:
     - cd client_webassembly && wasm-pack build --target=web --release --out-dir=/pkg
   only:
