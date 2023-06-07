@@ -86,7 +86,7 @@ wasm-assets:
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
     - npm install -g wasm-pack
   script:
-    - cd client_webassembly && wasm-pack build --target=web --release --out-dir=/pkg
+    - source ~/.cargo/env && cd client_webassembly && wasm-pack build --target=web --release --out-dir=/pkg
   only:
     refs:
       - master
