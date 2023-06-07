@@ -25,6 +25,7 @@ fn main() {
         .expect("downloading web asset artifacts")
         .bytes()
         .expect("get asset bytes");
+    assert!(zipfile_bytes.len() > 64); // make sure we didnt get error 404
     zipfile
         .write(&zipfile_bytes)
         .expect("writing zipfile bytes");
