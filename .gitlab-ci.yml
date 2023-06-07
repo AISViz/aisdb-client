@@ -83,7 +83,8 @@ wasm-assets:
     - mkdir -p /pkg
     #- cargo install wasm-pack
     #- curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+    - apt-get install clang
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --profile=minimal --target=wasm32-unknown-unknown
     - npm install -g wasm-pack
   script:
     - source ~/.cargo/env && cd client_webassembly && wasm-pack build --target=web --release --out-dir=/pkg
