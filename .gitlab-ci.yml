@@ -88,8 +88,8 @@ wasm-assets:
     refs:
       - master
       - artifacts_test
-    changes:
-      - ./client_webassembly/src/lib.rs
+    #changes:
+    #  - ./client_webassembly/src/lib.rs
   artifacts:
     when: always
     paths: 
