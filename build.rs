@@ -32,15 +32,14 @@ fn main() {
         );
     eprintln!("{}", String::from_utf8_lossy(&wasm_build.stderr[..]));
     assert!(wasm_build.status.code() == Some(0));
+    /*
     if wasm_build.status.code().unwrap() != 0 {
-        assert!(std::path::Path::new("./aisdb_web/map/pkg.zip")
-            .try_exists()
-            .expect("no zip found"));
-        let unzip1 = Command::new("unzip")
-            .arg("aisdb_web/map/pkg.zip")
-            .output()
-            .unwrap();
-        assert!(unzip1.status.code().unwrap() == 0);
+    assert!(std::path::Path::new("./aisdb_web/map/pkg.zip") .try_exists() .expect("no zip found"));
+    let unzip1 = Command::new("unzip")
+        .arg("aisdb_web/map/pkg.zip")
+        .output()
+        .unwrap();
+    assert!(unzip1.status.code().unwrap() == 0);
     } else {
         let zip1 = Command::new("zip")
             .arg("-ru9")
@@ -50,6 +49,7 @@ fn main() {
             .unwrap();
         assert!(zip1.status.code().unwrap() == 0);
     }
+    */
 
     // compress wasm
     let wasm_opt_file = "./aisdb_web/map/pkg/client_bg.wasm";
