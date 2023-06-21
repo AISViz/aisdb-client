@@ -13,7 +13,7 @@
     "express": ">=4.18.1",
     "flatpickr": "^4.6.13",
     "html2canvas": ">=1.4.1",
-    "ol": "^7.3.0",
+    "ol": ">=7.3.9",
     "typescript": "^5.0.2"
   },
   "devDependencies": {
