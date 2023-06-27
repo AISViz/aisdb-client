@@ -54,6 +54,7 @@ class FileChecksums():
                         'IF NOT EXISTS '
                         'idx_map on hashmap(hash)')
             dbconn.close()
+
         elif isinstance(self.dbconn, PostgresDBConn):
             dbconn = self.dbconn
             cur = self.dbconn.cursor()
@@ -70,11 +71,12 @@ class FileChecksums():
         if isinstance(self.dbconn, SQLiteDBConn):
             dbconn = sqlite3.connect(self.dbconn.dbpaths[0])
             dbconn.execute('INSERT INTO hashmap VALUES (?,?)',
-                           [checksum, pickle.dumps(None)])
+                           [checksum, pickle.dumps(b'')])
+
         elif isinstance(self.dbconn, PostgresDBConn):
             dbconn = self.dbconn
             dbconn.execute('INSERT INTO hashmap VALUES ($1,$2)',
-                           [checksum, pickle.dumps(None)])
+                           [checksum, pickle.dumps(b'')])
         dbconn.commit()
         if isinstance(self.dbconn, SQLiteDBConn):
             dbconn.close()
@@ -191,14 +193,14 @@ def decode_msgs(filepaths,
 
         .. _example_decode:
 
-        >>> import os
+            >>> import os
         >>> from aisdb import decode_msgs, DBConn
 
         >>> dbpath = 'test_decode_msgs.db'
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv',
         ...              'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with DBConn() as dbconn:
-        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath, source='TESTING')
+            ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath, source='TESTING')
         >>> os.remove(dbpath)
     '''
     if not isinstance(dbconn,
