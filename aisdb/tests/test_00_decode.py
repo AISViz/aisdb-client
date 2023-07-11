@@ -45,7 +45,7 @@ def test_decode_1day_postgres(tmpdir):
     testingdata_zip = os.path.join(os.path.dirname(__file__), 'testdata',
                                    'test_data_20211101.nm4.zip')
     with PostgresDBConn(
-            hostaddr='[fc00::9]',
+            hostaddr='fc00::9',
             user='postgres',
             port=5432,
             password=os.environ.get('POSTGRES_PASSWORD', 'devel'),
