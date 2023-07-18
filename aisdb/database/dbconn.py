@@ -186,7 +186,26 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         #self = conn
 
         #self.dbpaths = []
-        self.db_daterange = {}
+
+        dynamic_tables_qry = (
+            "select table_name from information_schema.tables "
+            "where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name")
+        cur = self.cursor()
+        cur.execute(dynamic_tables_qry)
+        res = cur.fetchall()
+        assert len(res) > 0
+        first = res[0][0]
+        last = res[-1][0]
+
+        min_qry = f'SELECT MIN(time) FROM {first}'
+        cur.execute(min_qry)
+        min_time = datetime.utcfromtimestamp(cur.fetchone()[0])
+
+        max_qry = f'SELECT MAX(time) FROM {last}'
+        cur.execute(max_qry)
+        max_time = datetime.utcfromtimestamp(cur.fetchone()[0])
+
+        self.db_daterange = {'main': {'start': min_time, 'end': max_time}}
 
     def execute(self, sql, args=[]):
         sql = re.sub(r'\$[0-9][0-9]*', r'%s', sql)
