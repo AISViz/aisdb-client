@@ -190,13 +190,15 @@ class DBQuery(UserDict):
         assert 'dbpath' not in self.data.keys()
         cur = self.dbconn.cursor()
 
-        if isinstance(self, PostgresDBConn):
+        if isinstance(self.dbconn, PostgresDBConn):
             iter_names = ['main']
-        elif isinstance(self, SQLiteDBConn):
+        elif isinstance(self.dbconn, SQLiteDBConn):
             iter_names = [
-                f for f in self.dbconn.dbpaths if self.dbconn._get_dbname(
-                    dbpath) in self.dbconn.db_daterange.values()
+                f for f in self.dbconn.dbpaths
+                if self.dbconn._get_dbname(f) in self.dbconn.db_daterange
             ]
+        else:
+            assert False
 
         #for dbpath in self.dbconn.dbpaths:
         for dbpath in iter_names:
