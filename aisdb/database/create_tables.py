@@ -4,7 +4,7 @@ from collections import Counter
 import numpy as np
 import warnings
 
-from aisdb.database.dbconn import DBConn
+from aisdb.database.dbconn import DBConn, SQLiteDBConn
 from aisdb import sqlpath
 
 
@@ -43,8 +43,9 @@ def aggregate_static_msgs(dbconn, months_str, verbose=False):
                 logs messages to stdout
     '''
 
-    if not isinstance(dbconn, DBConn):  # pragma: no cover
-        raise ValueError('db argument must be a DBConn database connection')
+    if not isinstance(dbconn, SQLiteDBConn):
+        raise ValueError(
+            'db argument must be an SQLiteDBConn database connection')
 
     assert not hasattr(dbconn, 'dbpath')
     assert hasattr(dbconn, 'dbpaths')

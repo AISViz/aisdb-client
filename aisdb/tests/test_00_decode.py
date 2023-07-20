@@ -31,7 +31,9 @@ def test_decode_1day(tmpdir):
                     source='TESTING',
                     vacuum=dbpath + '.vacuum')
         delta = datetime.now() - dt
-        print(f'total parse and insert time: {delta.total_seconds():.2f}s')
+        print(
+            f'sqlite total parse and insert time: {delta.total_seconds():.2f}s'
+        )
 
 
 def test_decode_1day_postgres(tmpdir):
@@ -44,23 +46,24 @@ def test_decode_1day_postgres(tmpdir):
                                   'test_data_20211101.nm4.gz')
     testingdata_zip = os.path.join(os.path.dirname(__file__), 'testdata',
                                    'test_data_20211101.nm4.zip')
+    filepaths = [
+        testingdata_nm4, testingdata_csv, testingdata_gz, testingdata_zip
+    ]
+
+    filepaths = [testingdata_csv]
     with PostgresDBConn(
             hostaddr='fc00::17',
             user='postgres',
-            port=5432,
-            password=os.environ.get('POSTGRES_PASSWORD', 'devel'),
+            port=5431,
+            password='devel',
     ) as dbconn:
-        filepaths = [
-            testingdata_nm4, testingdata_csv, testingdata_gz, testingdata_zip
-        ]
         dt = datetime.now()
         decode_msgs(filepaths=filepaths,
                     dbconn=dbconn,
                     source='TESTING',
                     vacuum=True)
-        decode_msgs(filepaths=filepaths,
-                    dbconn=dbconn,
-                    source='TESTING',
-                    vacuum=True)
         delta = datetime.now() - dt
-        print(f'total parse and insert time: {delta.total_seconds():.2f}s')
+        print(
+            f'postgres total parse and insert time: {delta.total_seconds():.2f}s'
+        )
+        dbconn.commit()

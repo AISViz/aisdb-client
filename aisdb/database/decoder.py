@@ -3,6 +3,7 @@
 '''
 
 from hashlib import md5
+from dateutil.rrule import rrule, MONTHLY
 import gzip
 import os
 import pickle
@@ -10,8 +11,9 @@ import sqlite3
 import tempfile
 import zipfile
 
-from aisdb.database.dbconn import SQLiteDBConn, PostgresDBConn
+from aisdb import aggregate_static_msgs
 from aisdb.aisdb import decoder
+from aisdb.database.dbconn import SQLiteDBConn, PostgresDBConn
 
 
 class FileChecksums():
@@ -110,9 +112,9 @@ class FileChecksums():
 
 
 def _decode_gz(file, tmp_dir, dbpath, psql_conn_string, source, verbose):
-    if dbpath is None:  # pragma: no cover
+    if dbpath is None:
         dbpath = ''
-    if psql_conn_string is None:  # pragma: no cover
+    if psql_conn_string is None:
         psql_conn_string = ''
     unzip_file = os.path.join(tmp_dir, file.rsplit(os.path.sep, 1)[-1][:-3])
     with gzip.open(file, 'rb') as f1, open(unzip_file, 'wb') as f2:
@@ -253,6 +255,24 @@ def decode_msgs(
         if not skip_checksum:
             dbindex.insert_checksum(signature)
     os.removedirs(dbindex.tmp_dir)
+    '''
+    if isinstance(dbconn, SQLiteDBConn):
+        #dbconn._set_db_daterange(dbconn._get_dbname(dbpath))
+        dbconn._attach(dbpath)
+        date_range = dbconn.db_daterange[dbconn._get_dbname(dbpath)]
+    elif isinstance(dbconn, PostgresDBConn):
+        dbconn._set_db_daterange()
+        date_range = dbconn.db_daterange
+    else:
+        assert False
+
+    months = [
+        month.strftime('%Y%m') for month in rrule(
+            MONTHLY, dtstart=date_range['start'], until=date_range['end'])
+    ]
+
+    aggregate_static_msgs(dbconn, months, verbose)
+    '''
 
     if vacuum is not False:
         print("finished parsing data\nvacuuming...")
@@ -268,9 +288,11 @@ def decode_msgs(
             dbconn.commit()
         elif isinstance(dbconn, PostgresDBConn):
             if vacuum is True:
+                dbconn.commit()
                 previous = dbconn.conn.autocommit
                 dbconn.conn.autocommit = True
-                dbconn.execute('VACUUM')
+                dbconn.execute(
+                    'VACUUM (verbose, index_cleanup, parallel 3, analyze)')
                 dbconn.conn.autocommit = previous
             elif isinstance(vacuum, str):
                 raise ValueError(

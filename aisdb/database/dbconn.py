@@ -62,10 +62,38 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
                 names
     '''
 
+    def _set_db_daterange(self, dbname):
+        # query the temporal range of monthly database tables
+        # results will be stored as a dictionary attribute db_daterange
+        if not hasattr(self, 'db_daterange'):
+            self.db_daterange = {}
+        self.db_daterange[dbname] = {}
+        sql_qry = (f'SELECT * FROM {dbname}.sqlite_master '
+                   r'WHERE type="table" AND name LIKE "ais_%_dynamic" ')
+        try:
+            cur = self.cursor()
+            cur.execute(sql_qry)
+            dynamic_tables = cur.fetchall()
+            if dynamic_tables != []:
+                db_months = sorted(
+                    [table['name'].split('_')[1] for table in dynamic_tables])
+                self.db_daterange[dbname] = {
+                    'start':
+                    datetime(int(db_months[0][:4]), int(db_months[0][4:]),
+                             1).date(),
+                    'end':
+                    datetime((y := int(db_months[-1][:4])),
+                             (m := int(db_months[-1][4:])),
+                             monthrange(y, m)[1]).date(),
+                }
+        except Exception as err:
+            warnings.warn(str(err.with_traceback(None)))
+        finally:
+            cur.close()
+
     def __init__(self):
         # configs
         self.dbpaths = []
-        self.db_daterange = {}
         super().__init__(':memory:',
                          timeout=5,
                          detect_types=sqlite3.PARSE_DECLTYPES
@@ -108,33 +136,7 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
             self.trafficdb = dbpath
         cur.close()
 
-        # query the temporal range of monthly database tables
-        # results will be stored as a dictionary attribute db_daterange
-        #cur = self.cursor()
-        sql_qry = (
-            f'SELECT * FROM {dbname}.sqlite_master '
-            'WHERE type="table" AND name LIKE "ais\\_%\\_dynamic" ESCAPE "\\" '
-        )
-        try:
-            cur = self.cursor()
-            cur.execute(sql_qry)
-            dynamic_tables = cur.fetchall()
-            if dynamic_tables != []:
-                db_months = sorted(
-                    [table['name'].split('_')[1] for table in dynamic_tables])
-                self.db_daterange[dbname] = {
-                    'start':
-                    datetime(int(db_months[0][:4]), int(db_months[0][4:]),
-                             1).date(),
-                    'end':
-                    datetime((y := int(db_months[-1][:4])),
-                             (m := int(db_months[-1][4:])),
-                             monthrange(y, m)[1]).date(),
-                }
-        except Exception as err:
-            warnings.warn(str(err.with_traceback(None)))
-        finally:
-            cur.close()
+        self._set_db_daterange(dbname=dbname)
 
 
 # default to local SQLite database
@@ -171,6 +173,41 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             dbconn = PostgresDBConn('Postgresql://localhost:5433')
 
     '''
+
+    def _set_db_daterange(self):
+        cur = self.cursor()
+
+        coarsetype_qry = ("select table_name from information_schema.tables "
+                          "where table_name = 'coarsetype_ref'")
+
+        cur.execute(coarsetype_qry)
+        coarsetype_exists = cur.fetchone()
+
+        if not coarsetype_exists:
+            self._create_table_coarsetype()
+
+        dynamic_tables_qry = (
+            "select table_name from information_schema.tables "
+            r"where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name"
+        )
+        cur.execute(dynamic_tables_qry)
+        res = cur.fetchall()
+
+        if not res:
+            self.db_daterange = {}
+        else:
+            first = res[0][0]
+            last = res[-1][0]
+
+            min_qry = f'SELECT MIN(time) FROM {first}'
+            cur.execute(min_qry)
+            min_time = datetime.utcfromtimestamp(cur.fetchone()[0])
+
+            max_qry = f'SELECT MAX(time) FROM {last}'
+            cur.execute(max_qry)
+            max_time = datetime.utcfromtimestamp(cur.fetchone()[0])
+
+            self.db_daterange = {'start': min_time, 'end': max_time}
 
     def __init__(self, libpq_connstring=None, **kwargs):
 
@@ -232,38 +269,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         #self = conn
 
         #self.dbpaths = []
-        cur = self.cursor()
-
-        coarsetype_qry = ("select table_name from information_schema.tables "
-                          "where table_name = 'coarsetype_ref'")
-
-        cur.execute(coarsetype_qry)
-        coarsetype_exists = cur.fetchone()
-
-        if not coarsetype_exists:
-            self._create_table_coarsetype()
-
-        dynamic_tables_qry = (
-            "select table_name from information_schema.tables "
-            "where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name")
-        cur.execute(dynamic_tables_qry)
-        res = cur.fetchall()
-
-        if not res:
-            self.db_daterange = {}
-        else:
-            first = res[0][0]
-            last = res[-1][0]
-
-            min_qry = f'SELECT MIN(time) FROM {first}'
-            cur.execute(min_qry)
-            min_time = datetime.utcfromtimestamp(cur.fetchone()[0])
-
-            max_qry = f'SELECT MAX(time) FROM {last}'
-            cur.execute(max_qry)
-            max_time = datetime.utcfromtimestamp(cur.fetchone()[0])
-
-            self.db_daterange = {'main': {'start': min_time, 'end': max_time}}
+        self._set_db_daterange()
 
     def execute(self, sql, args=[]):
         sql = re.sub(r'\$[0-9][0-9]*', r'%s', sql)

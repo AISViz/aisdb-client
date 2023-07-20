@@ -55,6 +55,7 @@ services:
       - python-test-postgresdb
 
   python-test-postgresdb:
+    container_name: python-test-postgresdb
     image: postgres:latest
     environment:
       POSTGRES_PASSWORD: devel
@@ -62,6 +63,8 @@ services:
     networks:
       ipv6_private:
         ipv6_address: "fc00::17"
+    command: 
+      ["postgres", "-c", "port=5431"]
 
   # webapp
   # connects to database server on $AISDBHOST:$AISDBPORT

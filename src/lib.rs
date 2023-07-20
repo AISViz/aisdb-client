@@ -13,7 +13,7 @@ use nmea_parser::NmeaParser;
 use pyo3::ffi::PyErr_CheckSignals;
 use pyo3::prelude::*;
 
-use aisdb_lib::csvreader::decodemsgs_ee_csv;
+use aisdb_lib::csvreader::{postgres_decodemsgs_ee_csv, sqlite_decodemsgs_ee_csv};
 use aisdb_lib::decode::{postgres_decode_insert_msgs, sqlite_decode_insert_msgs};
 use aisdb_receiver::{start_receiver, ReceiverArgs};
 
@@ -103,7 +103,14 @@ pub fn decoder(
                     }
                 }
                 Some("csv") | Some("CSV") => {
-                    decodemsgs_ee_csv(d, f, source, verbose).expect("decoding CSV");
+                    //decodemsgs_ee_csv(d, f, source, verbose).expect("decoding CSV");
+                    if !dbpath.is_empty() {
+                        sqlite_decodemsgs_ee_csv(d, f, source, verbose).expect("decoding CSV");
+                    }
+                    if !psql_conn_string.is_empty() {
+                        postgres_decodemsgs_ee_csv(psql_conn_string, f, source, verbose)
+                            .expect("decoding CSV");
+                    }
                 }
                 _ => {
                     panic!("unknown file type! {:?}", &f);

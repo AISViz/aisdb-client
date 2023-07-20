@@ -6,8 +6,10 @@ from collections import UserDict
 from datetime import datetime, timedelta, date
 from functools import reduce
 import warnings
+import sqlite3
 
 import numpy as np
+import psycopg
 
 from aisdb.database import sqlfcn, sqlfcn_callbacks
 from aisdb.database.create_tables import (aggregate_static_msgs,
@@ -51,7 +53,7 @@ class DBQuery(UserDict):
 
         complete example:
 
-        >>> import os
+            >>> import os
         >>> from datetime import datetime
         >>> from aisdb import DBConn, DBQuery, decode_msgs
         >>> from aisdb.database.sqlfcn_callbacks import in_timerange_validmmsi
@@ -59,17 +61,17 @@ class DBQuery(UserDict):
         >>> dbpath = './testdata/test.db'
         >>> start, end = datetime(2021, 7, 1), datetime(2021, 7, 7)
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv',
-        ...              'aisdb/tests/testdata/test_data_20211101.nm4']
+                ...              'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with DBConn() as dbconn:
-        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
-        ...     source='TESTING')
+            ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
+                    ...     source='TESTING')
         ...     q = DBQuery(dbconn=dbconn,
-        ...                 dbpath=dbpath,
-        ...                 callback=in_timerange_validmmsi,
-        ...                 start=start,
-        ...                 end=end)
+                ...                 dbpath=dbpath,
+                ...                 callback=in_timerange_validmmsi,
+                ...                 start=start,
+                ...                 end=end)
         ...     for rows in q.gen_qry():
-        ...         print(str(dict(rows[0])))
+            ...         print(str(dict(rows[0])))
         ...         break
         {'mmsi': 204242000, 'time': 1625176725, 'longitude': -8.93166666667, 'latitude': 41.45, 'sog': 4.0, 'cog': 176.0}
     '''
@@ -111,6 +113,84 @@ class DBQuery(UserDict):
             raise ValueError('Start must occur before end')
         assert isinstance(self.data['start'], (datetime, date))
         self.data.update({'months': sqlfcn_callbacks.dt2monthstr(**self.data)})
+
+    def _build_tables_sqlite(self,
+                             cur: sqlite3.Cursor,
+                             month: str,
+                             rng_string: str,
+                             dbname: str,
+                             reaggregate_static: bool = False,
+                             verbose: bool = False):
+        # check if static tables exist
+        cur.execute(
+            f'SELECT * FROM {dbname}.sqlite_master '
+            'WHERE type="table" AND name=?', [f'ais_{month}_static'])
+        if len(cur.fetchall()) == 0:
+            #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
+            warnings.warn('No static data for selected time range! '
+                          f'{dbname} '
+                          f'{rng_string}')
+
+        # check if aggregate tables exist
+        cur.execute((f'SELECT * FROM {dbname}.sqlite_master '
+                     'WHERE type="table" and name=?'),
+                    [f'static_{month}_aggregate'])
+        res = cur.fetchall()
+
+        if len(res) == 0 or reaggregate_static:
+            if verbose:
+                print(f'building static index for month {month}...',
+                      flush=True)
+            aggregate_static_msgs(self.dbconn, [month], verbose)
+
+        # check if dynamic tables exist
+        cur.execute(
+            f'SELECT * FROM {dbname}.sqlite_master WHERE '
+            'type="table" and name=?', [f'ais_{month}_dynamic'])
+        if len(cur.fetchall()) == 0:  # pragma: no cover
+            if isinstance(self.dbconn, ConnectionType.SQLITE.value):
+                sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
+
+            warnings.warn('No data for selected time range! '
+                          f'{dbname} '
+                          f'{rng_string}')
+
+    def _build_tables_postgres(self,
+                               cur: psycopg.Cursor,
+                               month: str,
+                               rng_string: str,
+                               reaggregate_static: bool = False,
+                               verbose: bool = False):
+        # check if static tables exist
+        cur.execute('SELECT table_name FROM information_schema.tables '
+                    f'WHERE table_name = ais_{month}_static')
+        if len(cur.fetchall()) == 0:
+            #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
+            warnings.warn('No static data for selected time range! '
+                          f'{rng_string}')
+
+        # check if aggregate tables exist
+        cur.execute('SELECT table_name FROM information_schema.tables '
+                    f'WHERE table_name = static_{month}_aggregate')
+        res = cur.fetchall()
+
+        if len(res) == 0 or reaggregate_static:
+            if verbose:
+                print(f'building static index for month {month}...',
+                      flush=True)
+            aggregate_static_msgs(self.dbconn, [month], verbose)
+
+        # check if dynamic tables exist
+        cur.execute('SELECT table_name FROM information_schema.tables '
+                    f'WHERE table_name = ais_{month}_dynamic')
+
+        if len(cur.fetchall()) == 0:  # pragma: no cover
+            if isinstance(self.dbconn, ConnectionType.SQLITE.value):
+                sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
+
+            warnings.warn('No data for selected time range! '
+                          f'{self.dbconn._get_dbname(dbpath)} '
+                          f'{rng_string}')
 
     def check_marinetraffic(self,
                             dbpath,
@@ -192,23 +272,36 @@ class DBQuery(UserDict):
 
         if isinstance(self.dbconn, PostgresDBConn):
             iter_names = ['main']
+            pass
         elif isinstance(self.dbconn, SQLiteDBConn):
             iter_names = [
                 f for f in self.dbconn.dbpaths
-                if self.dbconn._get_dbname(f) in self.dbconn.db_daterange
+                #if self.dbconn._get_dbname(f) in self.dbconn.db_daterange
             ]
         else:
             assert False
 
         #for dbpath in self.dbconn.dbpaths:
         for dbpath in iter_names:
-            #if self.dbconn._get_dbname(dbpath) not in self.dbconn.db_daterange:
-            #    continue
 
-            db_rng = self.dbconn.db_daterange[self.dbconn._get_dbname(dbpath)]
+            if isinstance(self.dbconn, PostgresDBConn):
+                db_rng = self.dbconn.db_daterange
 
-            if self['start'].date() > db_rng['end'] or self['end'].date(
-            ) < db_rng['start']:
+            elif isinstance(self.dbconn, SQLiteDBConn):
+                dbname = self.dbconn._get_dbname(dbpath)
+                self.dbconn._set_db_daterange(dbname)
+                if dbname not in self.dbconn.db_daterange:
+                    continue
+                #self.dbconn._attach(dbpath)
+                db_rng = self.dbconn.db_daterange[dbname]
+            else:
+                assert False
+
+            assert isinstance(db_rng['start'], date)
+            assert isinstance(db_rng['end'], date)
+
+            if (self['start'].date() > db_rng['end']
+                    or self['end'].date() < db_rng['start']):
                 if verbose:
                     print(f'skipping query for {dbpath} (out of timerange)...')
                 continue
@@ -224,41 +317,15 @@ class DBQuery(UserDict):
                 rng_string += ' -> '
                 rng_string += f'{db_rng["end"].year}-{db_rng["end"].month:02d}-{db_rng["end"].day:02d}'
 
-                # check if static tables exist
-                cur.execute(
-                    f'SELECT * FROM {self.dbconn._get_dbname(dbpath)}.sqlite_master '
-                    'WHERE type="table" AND name=?', [f'ais_{month}_static'])
-                if len(cur.fetchall()) == 0:
-                    #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
-                    warnings.warn('No static data for selected time range! '
-                                  f'{self.dbconn._get_dbname(dbpath)} '
-                                  f'{rng_string}')
-
-                # check if aggregate tables exist
-                cur.execute((
-                    f'SELECT * FROM {self.dbconn._get_dbname(dbpath)}.sqlite_master '
-                    'WHERE type="table" and name=?'),
-                            [f'static_{month}_aggregate'])
-                res = cur.fetchall()
-
-                if len(res) == 0 or reaggregate_static:
-                    if verbose:
-                        print(f'building static index for month {month}...',
-                              flush=True)
-                    aggregate_static_msgs(self.dbconn, [month], verbose)
-
-                # check if dynamic tables exist
-                cur.execute(
-                    f'SELECT * FROM {self.dbconn._get_dbname(dbpath)}.sqlite_master WHERE '
-                    'type="table" and name=?', [f'ais_{month}_dynamic'])
-                if len(cur.fetchall()) == 0:  # pragma: no cover
-                    if isinstance(self.dbconn, ConnectionType.SQLITE.value):
-                        sqlite_createtable_dynamicreport(
-                            self.dbconn, month, dbpath)
-
-                    warnings.warn('No data for selected time range! '
-                                  f'{self.dbconn._get_dbname(dbpath)} '
-                                  f'{rng_string}')
+                if isinstance(self.dbconn, SQLiteDBConn):
+                    self._build_tables_sqlite(cur, month, rng_string,
+                                              self.dbconn._get_dbname(dbpath),
+                                              reaggregate_static, verbose)
+                elif isinstance(self.dbconn, PostgresDBConn):
+                    self._build_tables_postgres(cur, month, rng_string,
+                                                reaggregate_static, verbose)
+                else:
+                    assert False
 
             qry = fcn(dbpath=dbpath, **self.data)
             if verbose:

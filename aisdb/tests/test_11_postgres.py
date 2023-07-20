@@ -11,8 +11,8 @@ def test_postgres():
     with PostgresDBConn(
             hostaddr='fc00::17',
             user='postgres',
-            port=5432,
-            password=os.environ.get('POSTGRES_PASSWORD', 'devel'),
+            port=5431,
+            password='devel',
     ) as dbconn:
         cur = dbconn.cursor()
         cur.execute('select * from coarsetype_ref;')

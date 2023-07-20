@@ -2,7 +2,7 @@ import os
 import warnings
 import sqlite3
 
-from aisdb.database.dbconn import DBConn
+from aisdb.database.dbconn import DBConn, PostgresDBConn
 from aisdb.database.decoder import decode_msgs
 from aisdb.database.create_tables import (
     aggregate_static_msgs,
@@ -76,3 +76,35 @@ def test_create_from_CSV(tmpdir):
     temp = [row['name'] for row in rows]
     print(temp)
     assert len(temp) == 3
+
+
+def test_create_from_CSV_postgres(tmpdir):
+    testingdata_csv = os.path.join(os.path.dirname(__file__), 'testdata',
+                                   'test_data_20210701.csv')
+    dbpath = os.path.join(tmpdir, 'test_create_from_CSV.db')
+    with PostgresDBConn(
+            hostaddr='fc00::17',
+            user='postgres',
+            port=5431,
+            password='devel',
+    ) as dbconn:
+        decode_msgs(
+            dbconn=dbconn,
+            filepaths=[testingdata_csv],
+            source='TESTING',
+            vacuum=False,
+        )
+
+        # new tables will be created by the decode_msgs function
+        # sqlite_createtable_dynamicreport(dbconn, month="202107", dbpath=dbpath)
+        # aggregate_static_msgs(dbconn, ["202107"])
+
+        curr = dbconn.cursor()
+        curr.execute(
+            # need to specify datbabase name in SQL statement
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' ORDER BY table_name;")
+        rows = curr.fetchall()
+        temp = [row[0] for row in rows]
+        print(temp)
+        assert len(temp) == 4
