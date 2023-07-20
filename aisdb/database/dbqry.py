@@ -61,31 +61,28 @@ class DBQuery(UserDict):
         >>> dbpath = './testdata/test.db'
         >>> start, end = datetime(2021, 7, 1), datetime(2021, 7, 7)
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv',
-                ...              'aisdb/tests/testdata/test_data_20211101.nm4']
+        ...              'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with DBConn() as dbconn:
-            ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
-                    ...     source='TESTING')
+        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
+        ...     source='TESTING')
         ...     q = DBQuery(dbconn=dbconn,
-                ...                 dbpath=dbpath,
-                ...                 callback=in_timerange_validmmsi,
-                ...                 start=start,
-                ...                 end=end)
+        ...                 dbpath=dbpath,
+        ...                 callback=in_timerange_validmmsi,
+        ...                 start=start,
+        ...                 end=end)
         ...     for rows in q.gen_qry():
-            ...         print(str(dict(rows[0])))
+        ...         print(str(dict(rows[0])))
         ...         break
         {'mmsi': 204242000, 'time': 1625176725, 'longitude': -8.93166666667, 'latitude': 41.45, 'sog': 4.0, 'cog': 176.0}
     '''
 
     def __init__(self, *, dbconn, dbpath=None, dbpaths=[], **kwargs):
-        #uif isinstance(dbconn, ConnectionType.SQLITE.value):
-
         if isinstance(dbconn, SQLiteDBConn):
             if dbpaths == [] and dbpath is None:
                 raise ValueError(
                     'must supply either dbpaths list or dbpath string value')
             elif dbpaths == []:  # pragma: no cover
                 dbpaths = [dbpath]
-            # elif isinstance(dbconn, ConnectionType.POSTGRES):
 
         elif isinstance(dbconn, PostgresDBConn):
             if dbpath is not None:
@@ -272,11 +269,9 @@ class DBQuery(UserDict):
 
         if isinstance(self.dbconn, PostgresDBConn):
             iter_names = ['main']
-            pass
         elif isinstance(self.dbconn, SQLiteDBConn):
             iter_names = [
                 f for f in self.dbconn.dbpaths
-                #if self.dbconn._get_dbname(f) in self.dbconn.db_daterange
             ]
         else:
             assert False
@@ -348,10 +343,7 @@ class DBQuery(UserDict):
 
             while len(res) > 0:
                 mmsi_rows += res
-                ummsi_idx = np.where(
-                    np.array(mmsi_rows)[:-1,
-                                        0] != np.array(mmsi_rows)[1:,
-                                                                  0])[0] + 1
+                ummsi_idx = np.where(np.array(mmsi_rows)[:-1, 0] != np.array(mmsi_rows)[1:, 0])[0] + 1
                 ummsi_idx = reduce(np.append,
                                    ([0], ummsi_idx, [len(mmsi_rows)]))
                 for i in range(len(ummsi_idx) - 2):

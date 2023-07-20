@@ -152,7 +152,6 @@ def decode_msgs(
         dbconn,
         source,
         dbpath=None,
-        #psql_conn_string=None,
         vacuum=False,
         skip_checksum=False,
         verbose=False):
@@ -215,10 +214,8 @@ def decode_msgs(
     if isinstance(dbconn, SQLiteDBConn):
         dbconn._attach(dbpath)
         assert dbpath is not None
-        #assert psql_conn_string is None
         psql_conn_string = ''
     else:
-        #assert psql_conn_string is not None
         psql_conn_string = dbconn.connection_string
         assert dbpath is None
         dbpath = ''
