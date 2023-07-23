@@ -1,20 +1,15 @@
 //! Rust exports for python API
 use std::cmp::{max, min};
 use std::path::PathBuf;
-use std::process::exit;
 use std::sync::mpsc::channel;
 use std::thread::{available_parallelism, sleep};
 use std::time::Duration;
 
 use futures::executor::ThreadPool;
-use geo::point;
-use geo::HaversineDistance;
-use geo::SimplifyVwIdx;
+use geo::{point, HaversineDistance, SimplifyVwIdx};
 use geo_types::{Coord, LineString};
 use nmea_parser::NmeaParser;
-use pyo3::ffi::PyErr_CheckSignals;
-use pyo3::prelude::*;
-use pyo3::Python;
+use pyo3::{pyfunction, pymodule, types::PyModule, wrap_pyfunction, PyResult, Python};
 use sysinfo::{RefreshKind, System, SystemExt};
 
 use aisdb_lib::csvreader::{postgres_decodemsgs_ee_csv, sqlite_decodemsgs_ee_csv};
@@ -91,10 +86,14 @@ pub fn decoder(
     let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
     sys.refresh_memory();
 
-    // reserve atleast 1GB of total memory for each worker thread
+    // reserve atleast 3.5GB of available memory for each worker thread,
+    // up to a maximum of one worker per CPU
     let worker_count = min(
-        max(1, sys.available_memory() as usize / 1e9 as usize),
-        available_parallelism().expect("getting CPU count").into(),
+        max(
+            1,
+            (sys.available_memory() as usize - 3.5e9 as usize) / 3.5e9 as usize,
+        ),
+        available_parallelism().expect("CPU count").into(),
     );
     let pool = ThreadPool::builder()
         .pool_size(worker_count)
@@ -122,14 +121,14 @@ pub fn decoder(
         let psql_conn_string = psql_conn_string.clone();
 
         py.check_signals().expect("checking signals");
+        sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
         sys.refresh_memory();
 
         // wait until the system has some available memory,
-        while (sys.available_memory() as f64) < 4e9
-            && in_process as f64 * 3e9 > sys.total_memory() as f64 - 3e9
-            && in_process != 0
+        while ((sys.available_memory() as f64) < 3.5e9 && in_process != 0)
+            || (in_process as f64 * 3.5e9 > sys.total_memory() as f64 - 3.5e9 && in_process != 0)
         {
-            sleep(Duration::from_millis(50));
+            sleep(System::MINIMUM_CPU_UPDATE_INTERVAL + Duration::from_millis(50));
             // check if keyboardinterrupt was sent
             py.check_signals().expect("Decoder was interrupted");
             // check if worker completed a file
@@ -384,6 +383,7 @@ pub fn receiver(
     dynamic_msg_bufsize: Option<usize>,
     static_msg_bufsize: Option<usize>,
     tee: Option<bool>,
+    py: Python<'_>,
 ) {
     let threads = start_receiver(ReceiverArgs {
         sqlite_dbpath: sqlite_dbpath.map(PathBuf::from),
@@ -399,21 +399,22 @@ pub fn receiver(
         static_msg_bufsize,
         tee,
     });
-    unsafe {
-        while threads
-            .iter()
-            .map(|t| t.is_finished())
-            .filter(|b| !(*b))
-            .count()
-            > 0
-        {
-            let signal = PyErr_CheckSignals();
-            if signal != 0 {
-                eprintln!("exiting...");
-                exit(signal);
-            }
-            sleep(Duration::from_millis(500));
+    while threads
+        .iter()
+        .map(|t| t.is_finished())
+        .filter(|b| !(*b))
+        .count()
+        > 0
+    {
+        py.check_signals().expect("Receiver interrupted");
+        /*
+        let signal = PyErr_CheckSignals();
+        if signal != 0 {
+            eprintln!("exiting...");
+            exit(signal);
         }
+        */
+        sleep(Duration::from_millis(500));
     }
 }
 

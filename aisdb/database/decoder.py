@@ -141,7 +141,7 @@ def fast_unzip(zipfilenames, dirname, processes=12):
         any existing unzipped files in the target directory will be skipped
     '''
 
-    print(f'unzipping files to {dirname}... '
+    print(f'unzipping files to {dirname} ...'
           '(set the TMPDIR environment variable to change this)')
 
     fcn = partial(_fast_unzip, dirname=dirname)
@@ -277,7 +277,7 @@ def decode_msgs(filepaths,
             os.path.join(dbindex.tmp_dir, f)
             for f in os.listdir(dbindex.tmp_dir)
         ])
-        breakpoint()
+        assert unzipped
         if not skip_checksum:
             for item in unzipped:
                 with open(os.path.abspath(item), 'rb') as f:
