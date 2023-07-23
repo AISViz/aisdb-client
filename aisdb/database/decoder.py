@@ -34,7 +34,8 @@ class FileChecksums():
                 '/tmp') and os.name == 'posix':  # pragma: no cover
             os.mkdir('/tmp')
         self.tmp_dir = tempfile.mkdtemp()
-        assert os.path.isdir(self.tmp_dir)
+        if not os.path.isdir(self.tmp_dir):
+            os.mkdir(self.tmp_dir)
 
     def checksums_table(self):
         ''' instantiates new database connection and creates a checksums
@@ -118,34 +119,40 @@ class FileChecksums():
         return digest
 
 
+def _fast_unzip(zipf, dirname):
+    ''' parallel process worker for fast_unzip() '''
+    if zipf.lower()[-4:] == '.zip':
+        exists = set(sorted(os.listdir(dirname)))
+        with zipfile.ZipFile(zipf, 'r') as zip_ref:
+            contents = set(zip_ref.namelist())
+            members = list(contents - exists)
+            zip_ref.extractall(path=dirname, members=members)
+    elif zipf.lower()[-3:] == '.gz':
+        unzip_file = os.path.join(dirname,
+                                  zipf.rsplit(os.path.sep, 1)[-1][:-3])
+        with gzip.open(zipf, 'rb') as f1, open(unzip_file, 'wb') as f2:
+            f2.write(f1.read())
+    else:
+        raise ValueError('unknown zip file type')
+
+
 def fast_unzip(zipfilenames, dirname, processes=12):
     ''' unzip many files in parallel
         any existing unzipped files in the target directory will be skipped
     '''
 
-    print(f'unzipping files to {dirname}...')
-
-    def _fast_unzip(zipf, dirname):
-        ''' parallel process worker for fast_unzip() '''
-        if zipf.lower()[-4:] == '.zip':
-            exists = set(sorted(os.listdir(dirname)))
-            with zipfile.ZipFile(zipf, 'r') as zip_ref:
-                contents = set(zip_ref.namelist())
-                members = list(contents - exists)
-                zip_ref.extractall(path=dirname, members=members)
-        elif zipf.lower()[-3:] == '.gz':
-            unzip_file = os.path.join(dirname,
-                                      zipf.rsplit(os.path.sep, 1)[-1][:-3])
-            with gzip.open(zipf, 'rb') as f1, open(unzip_file, 'wb') as f2:
-                f2.write(f1.read())
-        else:
-            raise ValueError('unknown zip file type')
+    print(f'unzipping files to {dirname}... '
+          '(set the TMPDIR environment variable to change this)')
 
     fcn = partial(_fast_unzip, dirname=dirname)
+    '''
     with Pool(processes) as p:
         p.imap_unordered(fcn, zipfilenames)
         p.close()
         p.join()
+    '''
+    for file in zipfilenames:
+        fcn(file)
 
 
 def decode_msgs(filepaths,
@@ -243,6 +250,8 @@ def decode_msgs(filepaths,
     for item in deepcopy(zipped):
         with open(os.path.abspath(item), 'rb') as f:
             signature = dbindex.get_md5(item, f)
+        if skip_checksum:
+            continue
         if dbindex.checksum_exists(signature):
             zipped.remove(item)
             if verbose:
@@ -253,6 +262,8 @@ def decode_msgs(filepaths,
     for item in deepcopy(not_zipped):
         with open(os.path.abspath(item), 'rb') as f:
             signature = dbindex.get_md5(item, f)
+        if skip_checksum:
+            continue
         if dbindex.checksum_exists(signature):
             not_zipped.remove(item)
             if verbose:
@@ -261,23 +272,25 @@ def decode_msgs(filepaths,
             not_zipped_checksums.append(signature)
 
     if zipped:
-        fast_unzip([z[0] for z in zipped], dbindex.tmp_dir)
+        fast_unzip(zipped, dbindex.tmp_dir)
         unzipped = sorted([
             os.path.join(dbindex.tmp_dir, f)
             for f in os.listdir(dbindex.tmp_dir)
         ])
-        for item in unzipped:
-            with open(os.path.abspath(item), 'rb') as f:
-                signature = dbindex.get_md5(item, f)
-            unzipped_checksums.append(signature)
+        breakpoint()
+        if not skip_checksum:
+            for item in unzipped:
+                with open(os.path.abspath(item), 'rb') as f:
+                    signature = dbindex.get_md5(item, f)
+                unzipped_checksums.append(signature)
     else:
         unzipped = []
 
     raw_files = not_zipped + unzipped
 
-    assert len(not_zipped) == len(not_zipped_checksums)
-    assert len(zipped) == len(zipped_checksums)
-    assert len(unzipped) == len(unzipped_checksums)
+    assert skip_checksum or len(not_zipped) == len(not_zipped_checksums)
+    assert skip_checksum or len(zipped) == len(zipped_checksums)
+    assert skip_checksum or len(unzipped) == len(unzipped_checksums)
 
     decoder(dbpath=dbpath,
             psql_conn_string=psql_conn_string,
@@ -285,7 +298,7 @@ def decode_msgs(filepaths,
             source=source,
             verbose=verbose)
 
-    if verbose:
+    if verbose and not skip_checksum:
         print('saving checksums...')
 
     for signature in zipped_checksums + not_zipped_checksums + unzipped_checksums:
