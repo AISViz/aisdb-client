@@ -69,6 +69,7 @@ pub fn get_db_conn(path: &std::path::Path) -> SqliteResult<SqliteConnection> {
 pub fn get_postgresdb_conn(connect_str: &str) -> Result<PGClient, Box<dyn std::error::Error>> {
     // TLS is handled by gateway router
     let client = PGClient::connect(connect_str, NoTls)?;
+    #[cfg(debug_assertions)]
     println!("Connected to postgres server");
     Ok(client)
 }
@@ -310,7 +311,9 @@ pub fn postgres_prepare_tx_dynamic(
         .format("%Y%m")
         .to_string();
     let mut t = c.transaction().unwrap();
-    postgres_createtable_dynamicreport(&mut t, &mstr).expect("creating dynamic table");
+    if let Err(e) = postgres_createtable_dynamicreport(&mut t, &mstr) {
+        eprintln!("{}", e);
+    };
     postgres_insert_dynamic(&mut t, positions, &mstr, source).expect("insert dynamic");
     t.commit()
 }
@@ -348,7 +351,10 @@ pub fn postgres_prepare_tx_static(
     .format("%Y%m")
     .to_string();
     let mut t = c.transaction().unwrap();
-    postgres_createtable_staticreport(&mut t, &mstr).expect("create static table");
+    //postgres_createtable_staticreport(&mut t, &mstr).expect("create static table");
+    if let Err(e) = postgres_createtable_staticreport(&mut t, &mstr) {
+        eprintln!("{}", e);
+    };
     postgres_insert_static(&mut t, stat_msgs, &mstr, source)
         .unwrap_or_else(|e| panic!("insert static: {}", e));
     t.commit()

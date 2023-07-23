@@ -1,7 +1,10 @@
+#[cfg(not(debug_assertions))]
 use std::fs::{remove_file, File};
+#[cfg(not(debug_assertions))]
 use std::io::Write;
 use std::process::Command;
 
+#[cfg(not(debug_assertions))]
 use reqwest::blocking::get;
 use wasm_opt::OptimizationOptions;
 
@@ -14,6 +17,8 @@ fn main() {
     //println!("cargo:rerun-if-changed=./aisdb_web/map/*.ts");
     //println!("cargo:rerun-if-changed=./client_webassembly/src/*");
 
+    // only do this for release builds
+    #[cfg(not(debug_assertions))]
     // download web assets from gitlab CD artifacts
     // if GITLAB_CI is set, it is expected that artifacts will be passed from previous job
     // if OFFLINE_BUILD is set, see below
@@ -27,7 +32,7 @@ fn main() {
                 .stdout,
         )
         .unwrap();
-        if branch == "" {
+        if branch.is_empty() {
             branch = "master".to_string();
         }
 
@@ -47,7 +52,7 @@ fn main() {
 
         let mut zipfile = File::create("artifacts.zip").expect("creating empty zipfile");
         zipfile
-            .write(&zipfile_bytes)
+            .write_all(&zipfile_bytes)
             .expect("writing zipfile bytes");
 
         // unzip web assets into project

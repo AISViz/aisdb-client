@@ -16,17 +16,24 @@ from aisdb.tests.create_testing_data import (
 def test_query_emptytable(tmpdir):
     warnings.filterwarnings('error')
     dbpath = os.path.join(tmpdir, 'test_query_emptytable.db')
-    with DBConn() as dbconn:
-        q = DBQuery(
-            dbconn=dbconn,
-            dbpath=dbpath,
-            start=datetime(2021, 1, 1),
-            end=datetime(2021, 1, 7),
-            callback=sqlfcn_callbacks.in_timerange_validmmsi,
-        )
-        sqlite_createtable_dynamicreport(dbconn, month='202101', dbpath=dbpath)
-        rows = q.gen_qry(reaggregate_static=True)
-        assert list(rows) == []
+    try:
+        with DBConn() as dbconn:
+            q = DBQuery(
+                dbconn=dbconn,
+                dbpath=dbpath,
+                start=datetime(2021, 1, 1),
+                end=datetime(2021, 1, 7),
+                callback=sqlfcn_callbacks.in_timerange_validmmsi,
+            )
+            sqlite_createtable_dynamicreport(dbconn,
+                                             month='202101',
+                                             dbpath=dbpath)
+            rows = q.gen_qry(reaggregate_static=True)
+            assert list(rows) == []
+    except UserWarning as warn:
+        assert 'No static data for selected time range!' in warn.args[0]
+    except Exception as err:
+        raise err
 
 
 def test_prepare_qry_domain(tmpdir):

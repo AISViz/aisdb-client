@@ -3,13 +3,19 @@
 '''
 
 from hashlib import md5
-from dateutil.rrule import rrule, MONTHLY
+from functools import partial
+from multiprocessing import Pool
+from copy import deepcopy
 import gzip
 import os
 import pickle
 import sqlite3
 import tempfile
 import zipfile
+import warnings
+
+import psycopg
+from dateutil.rrule import rrule, MONTHLY
 
 from aisdb import aggregate_static_msgs
 from aisdb.aisdb import decoder
@@ -28,12 +34,13 @@ class FileChecksums():
                 '/tmp') and os.name == 'posix':  # pragma: no cover
             os.mkdir('/tmp')
         self.tmp_dir = tempfile.mkdtemp()
+        assert os.path.isdir(self.tmp_dir)
 
     def checksums_table(self):
         ''' instantiates new database connection and creates a checksums
             hashmap table if it doesn't exist yet.
 
-            creates a temporary directory with a path stored in ``self.tmp_dir``
+            creates a temporary directory and saves path to ``self.tmp_dir``
 
             creates SQLite connection attribute ``self.dbconn``, which should
             be closed after use
@@ -107,54 +114,47 @@ class FileChecksums():
         # skip header row in CSV format(~1.6kb)
         if path[-4:].lower() == '.csv':
             _ = f.read(1600)
-        signature = md5(f.read(1000)).hexdigest()
-        return signature
+        digest = md5(f.read(1000)).hexdigest()
+        return digest
 
 
-def _decode_gz(file, tmp_dir, dbpath, psql_conn_string, source, verbose):
-    if dbpath is None:
-        dbpath = ''
-    if psql_conn_string is None:
-        psql_conn_string = ''
-    unzip_file = os.path.join(tmp_dir, file.rsplit(os.path.sep, 1)[-1][:-3])
-    with gzip.open(file, 'rb') as f1, open(unzip_file, 'wb') as f2:
-        f2.write(f1.read())
-    decoder(dbpath=dbpath,
-            psql_conn_string=psql_conn_string,
-            files=[unzip_file],
-            source=source,
-            verbose=verbose)
-    os.remove(unzip_file)
+def fast_unzip(zipfilenames, dirname, processes=12):
+    ''' unzip many files in parallel
+        any existing unzipped files in the target directory will be skipped
+    '''
+
+    print(f'unzipping files to {dirname}...')
+
+    def _fast_unzip(zipf, dirname):
+        ''' parallel process worker for fast_unzip() '''
+        if zipf.lower()[-4:] == '.zip':
+            exists = set(sorted(os.listdir(dirname)))
+            with zipfile.ZipFile(zipf, 'r') as zip_ref:
+                contents = set(zip_ref.namelist())
+                members = list(contents - exists)
+                zip_ref.extractall(path=dirname, members=members)
+        elif zipf.lower()[-3:] == '.gz':
+            unzip_file = os.path.join(dirname,
+                                      zipf.rsplit(os.path.sep, 1)[-1][:-3])
+            with gzip.open(zipf, 'rb') as f1, open(unzip_file, 'wb') as f2:
+                f2.write(f1.read())
+        else:
+            raise ValueError('unknown zip file type')
+
+    fcn = partial(_fast_unzip, dirname=dirname)
+    with Pool(processes) as p:
+        p.imap_unordered(fcn, zipfilenames)
+        p.close()
+        p.join()
 
 
-def _decode_ziparchive(file, tmp_dir, dbpath, psql_conn_string, source,
-                       verbose):
-    if dbpath is None:  # pragma: no cover
-        dbpath = ''
-    if psql_conn_string is None:  # pragma: no cover
-        psql_conn_string = ''
-    zipf = zipfile.ZipFile(file)
-    for item in zipf.namelist():
-        unzip_file = os.path.join(tmp_dir, item)
-        with zipf.open(item, 'r') as f1, open(unzip_file, 'wb') as f2:
-            f2.write(f1.read())
-        decoder(dbpath=dbpath,
-                psql_conn_string=psql_conn_string,
-                files=[unzip_file],
-                source=source,
-                verbose=verbose)
-        os.remove(unzip_file)
-    zipf.close()
-
-
-def decode_msgs(
-        filepaths,
-        dbconn,
-        source,
-        dbpath=None,
-        vacuum=False,
-        skip_checksum=False,
-        verbose=False):
+def decode_msgs(filepaths,
+                dbconn,
+                source,
+                dbpath=None,
+                vacuum=False,
+                skip_checksum=False,
+                verbose=False):
     ''' Decode NMEA format AIS messages and store in an SQLite database.
         To speed up decoding, create the database on a different hard drive
         from where the raw data is stored.
@@ -212,46 +212,97 @@ def decode_msgs(
         raise ValueError('must supply atleast one filepath.')
 
     if isinstance(dbconn, SQLiteDBConn):
+        assert dbpath
         dbconn._attach(dbpath)
-        assert dbpath is not None
+        dbindex = FileChecksums(dbconn=dbconn)
         psql_conn_string = ''
-    else:
-        psql_conn_string = dbconn.connection_string
-        assert dbpath is None
+    elif isinstance(dbconn, PostgresDBConn):
+        assert not dbpath
+        dbindex = FileChecksums(dbconn=dbconn)
         dbpath = ''
+        psql_conn_string = dbconn.connection_string
+    else:
+        assert False
 
-    dbindex = FileChecksums(dbconn=dbconn)
-    for file in filepaths:
-        if not skip_checksum:
-            with open(os.path.abspath(file), 'rb') as f:
-                signature = dbindex.get_md5(file, f)
-            if dbindex.checksum_exists(signature):
-                if verbose:  # pragma: no cover
-                    print(f'found matching checksum, skipping {file}')
-                continue
-        if file[-3:] == '.gz':
-            _decode_gz(file,
-                       dbindex.tmp_dir,
-                       source=source,
-                       verbose=verbose,
-                       psql_conn_string=psql_conn_string,
-                       dbpath=dbpath)
-        elif file[-4:] == '.zip':
-            _decode_ziparchive(file,
-                               dbindex.tmp_dir,
-                               source=source,
-                               verbose=verbose,
-                               psql_conn_string=psql_conn_string,
-                               dbpath=dbpath)
+    # handle zipfiles
+    zipped = [
+        f for f in filepaths
+        if f.lower()[-4:] == '.zip' or f.lower()[-3:] == '.gz'
+    ]
+    not_zipped = [
+        f for f in filepaths
+        if not (f.lower()[-4:] == '.zip' or f.lower()[-3:] == '.gz')
+    ]
+    zipped_checksums = []
+    not_zipped_checksums = []
+    unzipped_checksums = []
+
+    if verbose:
+        print('generating file checksums...')
+
+    for item in deepcopy(zipped):
+        with open(os.path.abspath(item), 'rb') as f:
+            signature = dbindex.get_md5(item, f)
+        if dbindex.checksum_exists(signature):
+            zipped.remove(item)
+            if verbose:
+                print(f'found matching checksum, skipping {item}')
         else:
-            decoder(dbpath=dbpath,
-                    psql_conn_string=psql_conn_string,
-                    files=[file],
-                    source=source,
-                    verbose=verbose)
-        if not skip_checksum:
-            dbindex.insert_checksum(signature)
+            zipped_checksums.append(signature)
+
+    for item in deepcopy(not_zipped):
+        with open(os.path.abspath(item), 'rb') as f:
+            signature = dbindex.get_md5(item, f)
+        if dbindex.checksum_exists(signature):
+            not_zipped.remove(item)
+            if verbose:
+                print(f'found matching checksum, skipping {item}')
+        else:
+            not_zipped_checksums.append(signature)
+
+    if zipped:
+        fast_unzip([z[0] for z in zipped], dbindex.tmp_dir)
+        unzipped = sorted([
+            os.path.join(dbindex.tmp_dir, f)
+            for f in os.listdir(dbindex.tmp_dir)
+        ])
+        for item in unzipped:
+            with open(os.path.abspath(item), 'rb') as f:
+                signature = dbindex.get_md5(item, f)
+            unzipped_checksums.append(signature)
+    else:
+        unzipped = []
+
+    raw_files = not_zipped + unzipped
+
+    assert len(not_zipped) == len(not_zipped_checksums)
+    assert len(zipped) == len(zipped_checksums)
+    assert len(unzipped) == len(unzipped_checksums)
+
+    decoder(dbpath=dbpath,
+            psql_conn_string=psql_conn_string,
+            files=raw_files,
+            source=source,
+            verbose=verbose)
+
+    if verbose:
+        print('saving checksums...')
+
+    for signature in zipped_checksums + not_zipped_checksums + unzipped_checksums:
+        dbindex.insert_checksum(signature)
+
+    if verbose:
+        print('cleaning temporary data...')
+
+    for tmpfile in unzipped:
+        os.remove(tmpfile)
+
+    ###
+
     os.removedirs(dbindex.tmp_dir)
+    #dbindex.dbconn.close()
+
+    ###
     '''
     if isinstance(dbconn, SQLiteDBConn):
         #dbconn._set_db_daterange(dbconn._get_dbname(dbpath))
@@ -283,7 +334,7 @@ def decode_msgs(
                 raise ValueError(
                     'vacuum arg must be boolean or filepath string')
             dbconn.commit()
-        elif isinstance(dbconn, PostgresDBConn):
+        elif isinstance(dbconn, (PostgresDBConn, psycopg.Connection)):
             if vacuum is True:
                 dbconn.commit()
                 previous = dbconn.conn.autocommit

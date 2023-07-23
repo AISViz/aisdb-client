@@ -19,21 +19,8 @@ import psycopg
 class _DBConn():
     ''' AISDB Database connection handler '''
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_class, exc, tb):
-        #cur = self.cursor()
-        try:
-            for dbpath in self.dbpaths:
-                self.execute('DETACH DATABASE ?', [self._get_dbname(dbpath)])
-            #cur.close()
-        except Exception:
-            print('rolling back...')
-            self.rollback()
-        finally:
-            self.close()
-        self = None
+    #def __enter__(self):
+    #    return self
 
     def _create_table_coarsetype(self):
         ''' create a table to describe integer vessel type as a human-readable
@@ -100,6 +87,22 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
                          | sqlite3.PARSE_COLNAMES)
         self.row_factory = sqlite3.Row
         self._create_table_coarsetype()
+
+    '''
+    def __exit__(self, exc_class, exc, tb):
+        #cur = self.cursor()
+        try:
+            for dbpath in self.dbpaths:
+                self.execute('DETACH DATABASE ?', [self._get_dbname(dbpath)])
+            #cur.close()
+        except Exception as err:
+            print('rolling back...')
+            self.rollback()
+            raise err
+        finally:
+            self.close()
+        self = None
+    '''
 
     def _get_dbname(self, dbpath):
         name_ext = os.path.split(dbpath)[1]
@@ -173,7 +176,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             dbconn = PostgresDBConn('Postgresql://localhost:5433')
 
     '''
-
+    '''
     def _set_db_daterange(self):
         cur = self.cursor()
 
@@ -208,6 +211,17 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             max_time = datetime.utcfromtimestamp(cur.fetchone()[0])
 
             self.db_daterange = {'start': min_time, 'end': max_time}
+    '''
+
+    def __enter__(self):
+        self.conn.__enter__()
+        return self
+
+    def __exit__(self, exc_class, exc, tb):
+        self.conn.__exit__(exc_class, exc, tb)
+        if exc_class or exc or tb:
+            print('rolling back...')
+            raise exc
 
     def __init__(self, libpq_connstring=None, **kwargs):
 
@@ -269,7 +283,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         #self = conn
 
         #self.dbpaths = []
-        self._set_db_daterange()
+        #self._set_db_daterange()
 
     def execute(self, sql, args=[]):
         sql = re.sub(r'\$[0-9][0-9]*', r'%s', sql)

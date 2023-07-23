@@ -50,7 +50,6 @@ def test_decode_1day_postgres(tmpdir):
         testingdata_nm4, testingdata_csv, testingdata_gz, testingdata_zip
     ]
 
-    filepaths = [testingdata_csv]
     with PostgresDBConn(
             hostaddr='fc00::17',
             user='postgres',
@@ -66,4 +65,3 @@ def test_decode_1day_postgres(tmpdir):
         print(
             f'postgres total parse and insert time: {delta.total_seconds():.2f}s'
         )
-        dbconn.commit()

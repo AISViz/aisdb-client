@@ -1,10 +1,12 @@
 //! Rust exports for python API
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::path::PathBuf;
 use std::process::exit;
-use std::thread::sleep;
+use std::sync::mpsc::channel;
+use std::thread::{available_parallelism, sleep};
 use std::time::Duration;
 
+use futures::executor::ThreadPool;
 use geo::point;
 use geo::HaversineDistance;
 use geo::SimplifyVwIdx;
@@ -12,6 +14,8 @@ use geo_types::{Coord, LineString};
 use nmea_parser::NmeaParser;
 use pyo3::ffi::PyErr_CheckSignals;
 use pyo3::prelude::*;
+use pyo3::Python;
+use sysinfo::{RefreshKind, System, SystemExt};
 
 use aisdb_lib::csvreader::{postgres_decodemsgs_ee_csv, sqlite_decodemsgs_ee_csv};
 use aisdb_lib::decode::{postgres_decode_insert_msgs, sqlite_decode_insert_msgs};
@@ -64,14 +68,17 @@ pub fn haversine(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
 ///     None
 ///
 #[pyfunction]
+#[pyo3(text_signature = "(dbpath, psql_conn_string, files, source, verbose)")]
 pub fn decoder(
     dbpath: &str,
-    psql_conn_string: &str,
+    psql_conn_string: String,
     files: Vec<&str>,
-    source: &str,
+    source: String,
     verbose: bool,
+    py: Python,
 ) {
     // array tuples containing (dbpath, filepath)
+    let files = files.clone();
     let mut path_arr = vec![];
     for file in files {
         path_arr.push((
@@ -80,36 +87,108 @@ pub fn decoder(
         ));
     }
 
+    // keep track of memory use before spawning new parallel workers
+    let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
+    sys.refresh_memory();
+
+    // reserve atleast 1GB of total memory for each worker thread
+    let worker_count = min(
+        max(1, sys.available_memory() as usize / 1e9 as usize),
+        available_parallelism().expect("getting CPU count").into(),
+    );
+    let pool = ThreadPool::builder()
+        .pool_size(worker_count)
+        .name_prefix("aisdb-decode-")
+        .create()
+        .expect("creating pool");
+
+    // when each worker is done they will send "true" to the receiver
+    let (sender, receiver) = channel::<bool>();
+
+    // count workers in progress
+    let mut in_process: u64 = 0;
+
+    println!(
+        "memory: {:.2}GB available. spawning {} workers",
+        sys.available_memory() as f64 * 1e-9_f64,
+        worker_count
+    );
+
     // check file extensions and begin decode
     let mut parser = NmeaParser::new();
-    for (d, f) in &path_arr {
+    for (d, f) in path_arr.iter() {
+        let f = f.clone();
+        let source = source.clone();
+        let psql_conn_string = psql_conn_string.clone();
+
+        py.check_signals().expect("checking signals");
+        sys.refresh_memory();
+
+        // wait until the system has some available memory,
+        while (sys.available_memory() as f64) < 4e9
+            && in_process as f64 * 3e9 > sys.total_memory() as f64 - 3e9
+            && in_process != 0
+        {
+            sleep(Duration::from_millis(50));
+            // check if keyboardinterrupt was sent
+            py.check_signals().expect("Decoder was interrupted");
+            // check if worker completed a file
+            if let Ok(r) = receiver.try_recv() {
+                assert!(r);
+                in_process -= 1;
+            }
+
+            sys.refresh_memory();
+        }
+
         match f.extension() {
             Some(ext_os_str) => match ext_os_str.to_str() {
                 Some("nm4") | Some("NM4") | Some("nmea") | Some("NMEA") | Some("rx")
                 | Some("txt") | Some("RX") | Some("TXT") => {
                     if !dbpath.is_empty() {
-                        parser = sqlite_decode_insert_msgs(d, f, source, parser, verbose)
+                        parser = sqlite_decode_insert_msgs(d, &f, &source, parser, verbose)
                             .expect("decoding NM4");
                     }
                     if !psql_conn_string.is_empty() {
-                        parser = postgres_decode_insert_msgs(
-                            psql_conn_string,
-                            f,
-                            source,
-                            parser,
-                            verbose,
-                        )
-                        .expect("decoding NM4");
+                        let sender = sender.clone();
+                        in_process += 1;
+                        let future = async move {
+                            if verbose {
+                                println!("processing {}", f.display());
+                            }
+                            let parser = NmeaParser::new();
+                            let _parser = postgres_decode_insert_msgs(
+                                &psql_conn_string,
+                                &f,
+                                &source,
+                                parser,
+                                verbose,
+                            )
+                            .expect("decoding NM4");
+                            sender.send(true).expect("sending done message to receiver")
+                        };
+
+                        pool.spawn_ok(future);
                     }
                 }
                 Some("csv") | Some("CSV") => {
-                    //decodemsgs_ee_csv(d, f, source, verbose).expect("decoding CSV");
                     if !dbpath.is_empty() {
-                        sqlite_decodemsgs_ee_csv(d, f, source, verbose).expect("decoding CSV");
+                        sqlite_decodemsgs_ee_csv(d, &f, &source, verbose).expect("decoding CSV");
                     }
                     if !psql_conn_string.is_empty() {
-                        postgres_decodemsgs_ee_csv(psql_conn_string, f, source, verbose)
-                            .expect("decoding CSV");
+                        let sender = sender.clone();
+                        in_process += 1;
+                        let future = async move {
+                            if verbose {
+                                println!("processing {}", f.display());
+                            }
+                            postgres_decodemsgs_ee_csv(&psql_conn_string, &f, &source, verbose)
+                                .expect("decoding CSV");
+                            sender
+                                .send(true)
+                                .expect("sending 'done' message from worker thread")
+                        };
+                        pool.spawn_ok(future);
                     }
                 }
                 _ => {
@@ -120,6 +199,14 @@ pub fn decoder(
                 panic!("unknown file type! {:?}", &f);
             }
         }
+    }
+    while in_process > 0 {
+        py.check_signals().expect("Decoder interrupted");
+        if let Ok(r) = receiver.try_recv() {
+            assert!(r);
+            in_process -= 1;
+        }
+        sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -332,12 +419,13 @@ pub fn receiver(
 
 /// Functions imported from Rust
 #[pymodule]
-pub fn aisdb(_py: Python, module: &PyModule) -> PyResult<()> {
-    module.add_wrapped(wrap_pyfunction!(haversine))?;
+#[allow(unused_variables)]
+pub fn aisdb(py: Python, module: &PyModule) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(decoder))?;
-    module.add_wrapped(wrap_pyfunction!(simplify_linestring_idx))?;
-    module.add_wrapped(wrap_pyfunction!(encoder_score_fcn))?;
     module.add_wrapped(wrap_pyfunction!(binarysearch_vector))?;
+    module.add_wrapped(wrap_pyfunction!(encoder_score_fcn))?;
+    module.add_wrapped(wrap_pyfunction!(haversine))?;
     module.add_wrapped(wrap_pyfunction!(receiver))?;
+    module.add_wrapped(wrap_pyfunction!(simplify_linestring_idx))?;
     Ok(())
 }

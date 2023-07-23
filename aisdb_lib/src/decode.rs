@@ -263,11 +263,11 @@ pub fn sqlite_decode_insert_msgs(
             }
         }
 
-        if positions.len() >= 500000 {
+        if positions.len() >= 5000 {
             let _d = sqlite_prepare_tx_dynamic(&mut c, source, positions);
             positions = vec![];
         };
-        if stat_msgs.len() >= 500000 {
+        if stat_msgs.len() >= 5000 {
             let _s = sqlite_prepare_tx_static(&mut c, source, stat_msgs);
             stat_msgs = vec![];
         }
@@ -330,11 +330,11 @@ pub fn postgres_decode_insert_msgs(
             }
         }
 
-        if positions.len() >= 500000 {
+        if positions.len() >= 5000 {
             let _d = postgres_prepare_tx_dynamic(&mut c, source, positions);
             positions = vec![];
         };
-        if stat_msgs.len() >= 500000 {
+        if stat_msgs.len() >= 5000 {
             let _s = postgres_prepare_tx_static(&mut c, source, stat_msgs);
             stat_msgs = vec![];
         }

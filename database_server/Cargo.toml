@@ -3,6 +3,16 @@ name = "aisdb-db-server"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = 'aisdb_db_server'
+
+[[bin]]
+name = 'aisdb_db_server'
+path = 'src/main.rs'
+
+[toolchain]
+channel = "nightly"
+
 [dependencies]
 aisdb-lib = {path = "../aisdb_lib", features=["postgres"]}
 

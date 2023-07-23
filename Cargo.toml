@@ -12,6 +12,8 @@ path = "src/lib.rs"
 geo = "0.25"
 geo-types = "*"
 nmea-parser = "0.10"
+futures = {version = "0.3", features = ["executor", "thread-pool"]}
+sysinfo = "0.29"
 
 [build-dependencies]
 wasm-opt = "0.112"
@@ -24,6 +26,9 @@ features = [ "sqlite", "postgres",]
 
 [dependencies.aisdb-receiver]
 path = "receiver"
+
+#[dependencies.aisdb-db-server]
+#path = "database_server"
 
 [dependencies.pyo3]
 version = "0.18.3"
