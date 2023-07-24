@@ -53,7 +53,7 @@ class DBQuery(UserDict):
 
         complete example:
 
-            >>> import os
+        >>> import os
         >>> from datetime import datetime
         >>> from aisdb import DBConn, DBQuery, decode_msgs
         >>> from aisdb.database.sqlfcn_callbacks import in_timerange_validmmsi
@@ -144,7 +144,7 @@ class DBQuery(UserDict):
         cur.execute(
             f'SELECT * FROM {dbname}.sqlite_master WHERE '
             'type="table" and name=?', [f'ais_{month}_dynamic'])
-        if len(cur.fetchall()) == 0:  # pragma: no cover
+        if len(cur.fetchall()) == 0:
             if isinstance(self.dbconn, ConnectionType.SQLITE.value):
                 sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
 
@@ -270,9 +270,7 @@ class DBQuery(UserDict):
         if isinstance(self.dbconn, PostgresDBConn):
             iter_names = ['main']
         elif isinstance(self.dbconn, SQLiteDBConn):
-            iter_names = [
-                f for f in self.dbconn.dbpaths
-            ]
+            iter_names = [f for f in self.dbconn.dbpaths]
         else:
             assert False
 
@@ -343,7 +341,10 @@ class DBQuery(UserDict):
 
             while len(res) > 0:
                 mmsi_rows += res
-                ummsi_idx = np.where(np.array(mmsi_rows)[:-1, 0] != np.array(mmsi_rows)[1:, 0])[0] + 1
+                ummsi_idx = np.where(
+                    np.array(mmsi_rows)[:-1,
+                                        0] != np.array(mmsi_rows)[1:,
+                                                                  0])[0] + 1
                 ummsi_idx = reduce(np.append,
                                    ([0], ummsi_idx, [len(mmsi_rows)]))
                 for i in range(len(ummsi_idx) - 2):

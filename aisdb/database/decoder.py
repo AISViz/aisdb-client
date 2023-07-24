@@ -375,9 +375,13 @@ def decode_msgs(filepaths,
             dbconn.execute(
                 f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
                 f'ON ais_{month}_dynamic (mmsi)')
+            if verbose:
+                print(f'done indexing mmsi: {month}')
             dbconn.execute(
                 f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_time '
                 f'ON ais_{month}_dynamic (time)')
+            if verbose:
+                print(f'done indexing time: {month}')
             dbconn.execute(f'''
                 DELETE FROM ais_{month}_dynamic WHERE ctid IN
                     (SELECT ctid FROM
@@ -386,15 +390,23 @@ def decode_msgs(filepaths,
                         FROM ais_{month}_dynamic ) AS duplicates_{month}
                     WHERE row_number > 1)
                 ''')
+            if verbose:
+                print(f'done deduplicating: {month}')
             dbconn.execute(
                 f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
                 f'ON ais_{month}_dynamic (longitude)')
+            if verbose:
+                print(f'done indexing longitude: {month}')
             dbconn.execute(
                 f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lat '
                 f'ON ais_{month}_dynamic (latitude)')
+            if verbose:
+                print(f'done indexing latitude: {month}')
             dbconn.execute(
                 f'CREATE UNIQUE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
                 f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude)')
+            if verbose:
+                print(f'done indexing combined index: {month}')
             if vacuum is True:
                 dbconn.commit()
                 previous = dbconn.conn.autocommit

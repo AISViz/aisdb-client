@@ -144,9 +144,9 @@ pub fn decoder(
         sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
         sys.refresh_memory();
 
-        // wait until the system has some available memory,
-        while (in_process as f64 * 3.5e9 > sys.total_memory() as f64 - 3.5e9
-            || (sys.available_memory() as f64) < 3.5e9)
+        // wait until the system has some available memory
+        while (in_process * bytesize > sys.total_memory() - bytesize
+            || sys.available_memory() < bytesize)
             && in_process != 0
         {
             sleep(System::MINIMUM_CPU_UPDATE_INTERVAL + Duration::from_millis(50));
