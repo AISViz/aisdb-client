@@ -385,14 +385,14 @@ def decode_msgs(filepaths,
             dbconn.commit()
             if verbose:
                 print(f'done indexing time: {month}')
-            dbconn.execute(f'''
-                DELETE FROM ais_{month}_dynamic WHERE ctid IN
-                    (SELECT ctid FROM
-                        (SELECT *, ctid, row_number() OVER
-                            (PARTITION BY mmsi, time, source ORDER BY ctid)
-                        FROM ais_{month}_dynamic ) AS duplicates_{month}
-                    WHERE row_number > 1)
-                ''')
+            #dbconn.execute(f'''
+            #    DELETE FROM ais_{month}_dynamic WHERE ctid IN
+            #        (SELECT ctid FROM
+            #            (SELECT *, ctid, row_number() OVER
+            #                (PARTITION BY mmsi, time, source ORDER BY ctid)
+            #            FROM ais_{month}_dynamic ) AS duplicates_{month}
+            #        WHERE row_number > 1)
+            #    ''')
             dbconn.commit()
             if verbose:
                 print(f'done deduplicating: {month}')
@@ -409,7 +409,7 @@ def decode_msgs(filepaths,
             if verbose:
                 print(f'done indexing latitude: {month}')
             dbconn.execute(
-                f'CREATE UNIQUE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
                 f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude, source)'
             )
             dbconn.commit()
