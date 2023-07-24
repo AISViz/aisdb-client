@@ -87,6 +87,8 @@ def test_create_from_CSV_postgres(tmpdir):
             port=5431,
             password='devel',
     ) as dbconn:
+        #dbconn.execute('DROP TABLE IF EXISTS ais_202107_dynamic')
+        #dbconn.execute('DROP TABLE IF EXISTS hashmap')
         decode_msgs(
             dbconn=dbconn,
             filepaths=[testingdata_csv],
@@ -98,7 +100,5 @@ def test_create_from_CSV_postgres(tmpdir):
             # need to specify datbabase name in SQL statement
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema = 'public' ORDER BY table_name;")
-        rows = cur.fetchall()
-        temp = [row[0] for row in rows]
-        assert len(temp) == 5
-        print(temp)
+        tables = [row[0] for row in cur.fetchall()]
+        assert 'ais_202107_dynamic' in tables

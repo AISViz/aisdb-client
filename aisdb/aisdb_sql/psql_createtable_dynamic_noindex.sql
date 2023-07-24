@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS ais_{}_dynamic (
     heading REAL,
     maneuver BOOLEAN,
     utc_second INTEGER,
-    source TEXT NOT NULL,
-    PRIMARY KEY (mmsi, time, longitude, latitude, sog, cog, source)
+    source TEXT NOT NULL
+    --,
+    --PRIMARY KEY (mmsi, time, longitude, latitude, sog, cog, source)
 );

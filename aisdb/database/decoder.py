@@ -6,6 +6,7 @@ from hashlib import md5
 from functools import partial
 from multiprocessing import Pool
 from copy import deepcopy
+from datetime import date
 import gzip
 import os
 import pickle
@@ -20,6 +21,8 @@ from dateutil.rrule import rrule, MONTHLY
 from aisdb import aggregate_static_msgs
 from aisdb.aisdb import decoder
 from aisdb.database.dbconn import SQLiteDBConn, PostgresDBConn
+from aisdb.proc_util import getfiledate
+from aisdb import sqlpath
 
 
 class FileChecksums():
@@ -83,8 +86,9 @@ class FileChecksums():
                            [checksum, pickle.dumps(None)])
         elif isinstance(self.dbconn, PostgresDBConn):
             dbconn = self.dbconn
-            dbconn.execute('INSERT INTO hashmap VALUES ($1,$2)',
-                           [checksum, pickle.dumps(None)])
+            dbconn.execute(
+                'INSERT INTO hashmap VALUES ($1,$2) ON CONFLICT DO NOTHING',
+                [checksum, pickle.dumps(None)])
         dbconn.commit()
         if isinstance(self.dbconn, SQLiteDBConn):
             dbconn.close()
@@ -232,14 +236,12 @@ def decode_msgs(filepaths,
         assert False
 
     # handle zipfiles
-    zipped = [
-        f for f in filepaths
+    zipped = {
+        f
+        for f in filepaths
         if f.lower()[-4:] == '.zip' or f.lower()[-3:] == '.gz'
-    ]
-    not_zipped = [
-        f for f in filepaths
-        if not (f.lower()[-4:] == '.zip' or f.lower()[-3:] == '.gz')
-    ]
+    }
+    not_zipped = list(set(filepaths) - set(zipped))
     zipped_checksums = []
     not_zipped_checksums = []
     unzipped_checksums = []
@@ -265,6 +267,7 @@ def decode_msgs(filepaths,
         if skip_checksum:
             continue
         if dbindex.checksum_exists(signature):
+            print('removing', item)
             not_zipped.remove(item)
             if verbose:
                 print(f'found matching checksum, skipping {item}')
@@ -288,31 +291,122 @@ def decode_msgs(filepaths,
 
     raw_files = not_zipped + unzipped
 
+    if not raw_files:
+        print('All files returned an existing checksum.',
+              'Cleaning temporary data...')
+        for tmpfile in unzipped:
+            os.remove(tmpfile)
+        os.removedirs(dbindex.tmp_dir)
+        return
+
     assert skip_checksum or len(not_zipped) == len(not_zipped_checksums)
     assert skip_checksum or len(zipped) == len(zipped_checksums)
     assert skip_checksum or len(unzipped) == len(unzipped_checksums)
 
-    decoder(dbpath=dbpath,
-            psql_conn_string=psql_conn_string,
-            files=raw_files,
-            source=source,
-            verbose=verbose)
+    # TODO: get file dates and create new tables before insert
+    if verbose:
+        print('checking file dates...')
+    filedates = [getfiledate(f) for f in not_zipped + unzipped]
+    filedates = [d for d in filedates if isinstance(d, date)]
+    months = [
+        month.strftime('%Y%m') for month in rrule(
+            MONTHLY, dtstart=min(filedates), until=max(filedates))
+    ]
+
+    if verbose:
+        print('creating tables and dropping table indexes...')
+
+    # drop constraints and indexes to speed up insert,
+    # and rebuild them after inserting
+    if isinstance(dbconn, PostgresDBConn):
+        with open(
+                os.path.join(sqlpath, 'psql_createtable_dynamic_noindex.sql'),
+                'r') as f:
+            create_dynamic_table_stmt = f.read()
+        with open(os.path.join(sqlpath, 'createtable_static.sql'), 'r') as f:
+            create_static_table_stmt = f.read()
+        for month in months:
+            dbconn.execute(create_dynamic_table_stmt.format(month))
+            dbconn.execute(create_static_table_stmt.format(month))
+            dbconn.execute(
+                f'ALTER TABLE ais_{month}_dynamic '
+                f'DROP CONSTRAINT IF EXISTS ais_{month}_dynamic_pkey')
+            for idx_name in ('mmsi', 'time', 'lon', 'lat', 'cluster'):
+                dbconn.execute(
+                    f'DROP INDEX IF EXISTS idx_ais_{month}_dynamic_{idx_name}')
+        dbconn.commit()
+    elif isinstance(dbconn, SQLiteDBConn):
+        with open(os.path.join(sqlpath, 'createtable_dynamic_clustered.sql'),
+                  'r') as f:
+            create_table_stmt = f.read()
+        for month in months:
+            dbconn.execute(create_table_stmt.format(month))
+    else:
+        assert False
+
+    completed_files = decoder(dbpath=dbpath,
+                              psql_conn_string=psql_conn_string,
+                              files=raw_files,
+                              source=source,
+                              verbose=verbose)
 
     if verbose and not skip_checksum:
         print('saving checksums...')
 
-    for signature in zipped_checksums + not_zipped_checksums + unzipped_checksums:
-        dbindex.insert_checksum(signature)
+    for filename, signature in zip(not_zipped + unzipped,
+                                   not_zipped_checksums + unzipped_checksums):
+        if filename in completed_files:
+            dbindex.insert_checksum(signature)
+        else:
+            if verbose:
+                print(f'error processing {filename}, skipping checksum...')
 
     if verbose:
         print('cleaning temporary data...')
 
     for tmpfile in unzipped:
         os.remove(tmpfile)
+    os.removedirs(dbindex.tmp_dir)
+
+    if isinstance(dbconn, PostgresDBConn):
+        if verbose:
+            print('rebuilding indexes...')
+        for month in months:
+            dbconn.execute(
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
+                f'ON ais_{month}_dynamic (mmsi)')
+            dbconn.execute(
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_time '
+                f'ON ais_{month}_dynamic (time)')
+            dbconn.execute(f'''
+                DELETE FROM ais_{month}_dynamic WHERE ctid IN
+                    (SELECT ctid FROM
+                        (SELECT *, ctid, row_number() OVER
+                            (PARTITION BY mmsi, time ORDER BY ctid)
+                        FROM ais_{month}_dynamic ) AS duplicates_{month}
+                    WHERE row_number > 1)
+                ''')
+            dbconn.execute(
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
+                f'ON ais_{month}_dynamic (longitude)')
+            dbconn.execute(
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lat '
+                f'ON ais_{month}_dynamic (latitude)')
+            dbconn.execute(
+                f'CREATE UNIQUE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
+                f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude)')
+            if vacuum is True:
+                dbconn.commit()
+                previous = dbconn.conn.autocommit
+                dbconn.conn.autocommit = True
+                dbconn.execute(
+                    f'VACUUM (analyze, index_cleanup, verbose, parallel 3) ais_{month}_dynamic'
+                )
+                dbconn.conn.autocommit = previous
+        dbconn.commit()
 
     ###
 
-    os.removedirs(dbindex.tmp_dir)
     #dbindex.dbconn.close()
 
     ###
@@ -348,6 +442,8 @@ def decode_msgs(filepaths,
                     'vacuum arg must be boolean or filepath string')
             dbconn.commit()
         elif isinstance(dbconn, (PostgresDBConn, psycopg.Connection)):
+            pass
+            '''
             if vacuum is True:
                 dbconn.commit()
                 previous = dbconn.conn.autocommit
@@ -361,6 +457,7 @@ def decode_msgs(filepaths,
                 )
             else:
                 assert vacuum is False
+            '''
         else:
             raise RuntimeError
 

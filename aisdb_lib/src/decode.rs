@@ -162,18 +162,14 @@ pub fn filter_vesseldata(
     }
 }
 
-fn validate_file_ext(filename: &std::path::Path) {
+fn validate_file_ext(filename: std::path::PathBuf) -> Result<(), String> {
     match filename.extension() {
         Some(ext_os_str) => match ext_os_str.to_str() {
             Some("nm4") | Some("NM4") | Some("nmea") | Some("NMEA") | Some("rx") | Some("txt")
-            | Some("RX") | Some("TXT") => {}
-            _ => {
-                panic!("unknown file type! {:?}", &filename);
-            }
+            | Some("RX") | Some("TXT") => Ok(()),
+            _ => Err(format!("unknown file type! {:?}", &filename)),
         },
-        _ => {
-            panic!("unknown file type! {:?}", &filename);
-        }
+        _ => Err(format!("unknown file type! {:?}", &filename)),
     }
 }
 
@@ -190,7 +186,7 @@ fn decode_filter_pipe(
 }
 
 fn print_status_info(
-    filename: &std::path::Path,
+    filename: std::path::PathBuf,
     elapsed: std::time::Duration,
     count: usize,
     verbose: bool,
@@ -226,18 +222,18 @@ fn print_status_info(
 /// decoded vessel data will be inserted into the SQLite database
 /// located at dbpath
 pub fn sqlite_decode_insert_msgs(
-    dbpath: &std::path::Path,
-    filename: &std::path::Path,
+    dbpath: std::path::PathBuf,
+    filename: std::path::PathBuf,
     source: &str,
     mut parser: NmeaParser,
     verbose: bool,
-) -> Result<NmeaParser, Error> {
-    validate_file_ext(filename);
+) -> Result<NmeaParser, Box<dyn std::error::Error>> {
+    validate_file_ext(filename.clone())?;
     let mut c = get_db_conn(dbpath).expect("getting db conn");
 
     let start = Instant::now();
     let reader = BufReader::new(
-        File::open(filename)
+        File::open(&filename)
             .unwrap_or_else(|_| panic!("Cannot open .nm4 file {}", filename.to_str().unwrap())),
     );
     let mut stat_msgs = <Vec<VesselData>>::new();
@@ -293,20 +289,17 @@ pub fn sqlite_decode_insert_msgs(
 /// located at dbpath
 pub fn postgres_decode_insert_msgs(
     connect_str: &str,
-    filename: &std::path::Path,
+    filename: std::path::PathBuf,
     source: &str,
     mut parser: NmeaParser,
     verbose: bool,
-) -> Result<NmeaParser, Error> {
-    validate_file_ext(filename);
-    //let mut c = get_db_conn(dbpath).expect("getting db conn");
+) -> Result<NmeaParser, Box<dyn std::error::Error>> {
+    validate_file_ext(filename.clone())?;
     let mut c = get_postgresdb_conn(connect_str).expect("getting db conn");
 
     let start = Instant::now();
-    let reader = BufReader::new(
-        File::open(filename)
-            .unwrap_or_else(|_| panic!("Cannot open .nm4 file {}", filename.to_str().unwrap())),
-    );
+    let reader = BufReader::new(File::open(&filename)?);
+
     let mut stat_msgs = <Vec<VesselData>>::new();
     let mut positions = <Vec<VesselData>>::new();
     let mut count = 0;
@@ -331,21 +324,21 @@ pub fn postgres_decode_insert_msgs(
         }
 
         if positions.len() >= 5000 {
-            let _d = postgres_prepare_tx_dynamic(&mut c, source, positions);
+            postgres_prepare_tx_dynamic(&mut c, source, positions)?;
             positions = vec![];
         };
         if stat_msgs.len() >= 5000 {
-            let _s = postgres_prepare_tx_static(&mut c, source, stat_msgs);
+            postgres_prepare_tx_static(&mut c, source, stat_msgs)?;
             stat_msgs = vec![];
         }
     }
 
     // insert remaining
     if !positions.is_empty() {
-        let _d = postgres_prepare_tx_dynamic(&mut c, source, positions);
+        postgres_prepare_tx_dynamic(&mut c, source, positions)?;
     }
     if !stat_msgs.is_empty() {
-        let _s = postgres_prepare_tx_static(&mut c, source, stat_msgs);
+        postgres_prepare_tx_static(&mut c, source, stat_msgs)?;
     }
 
     let elapsed = start.elapsed();

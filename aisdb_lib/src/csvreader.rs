@@ -58,20 +58,17 @@ pub fn filter_vesseldata_csv(rowopt: Option<StringRecord>) -> Option<(StringReco
 /// perform database input
 #[cfg(feature = "sqlite")]
 pub fn sqlite_decodemsgs_ee_csv(
-    dbpath: &std::path::Path,
-    filename: &std::path::PathBuf,
+    dbpath: std::path::PathBuf,
+    filename: std::path::PathBuf,
     source: &str,
     verbose: bool,
 ) -> Result<(), Error> {
-    assert_eq!(
-        &filename.to_str().unwrap()[&filename.to_str().unwrap().len() - 4..],
-        ".csv"
-    );
+    assert_eq!(&filename.extension().expect("getting file ext"), &"csv");
 
     let start = Instant::now();
 
     let mut reader = csv::Reader::from_reader(
-        File::open(filename).unwrap_or_else(|_| panic!("cannot open file {:?}", filename)),
+        File::open(&filename).unwrap_or_else(|_| panic!("cannot open file {:?}", filename)),
     );
     let mut stat_msgs = <Vec<VesselData>>::new();
     let mut positions = <Vec<VesselData>>::new();
@@ -202,22 +199,17 @@ pub fn postgres_decodemsgs_ee_csv(
     filename: &std::path::PathBuf,
     source: &str,
     verbose: bool,
-) -> Result<(), Error> {
-    assert_eq!(
-        &filename.to_str().unwrap()[&filename.to_str().unwrap().len() - 4..],
-        ".csv"
-    );
+) -> Result<(), Box<dyn std::error::Error>> {
+    assert_eq!(&filename.extension().expect("getting file ext"), &"csv");
 
     let start = Instant::now();
 
-    let mut reader = csv::Reader::from_reader(
-        File::open(filename).unwrap_or_else(|_| panic!("cannot open file {:?}", filename)),
-    );
+    let mut reader = csv::Reader::from_reader(File::open(filename)?);
     let mut stat_msgs = <Vec<VesselData>>::new();
     let mut positions = <Vec<VesselData>>::new();
     let mut count = 0;
 
-    let mut c = get_postgresdb_conn(connect_str).expect("getting db conn");
+    let mut c = get_postgresdb_conn(connect_str)?;
 
     for (row, epoch, is_dynamic) in reader
         .records()
@@ -290,20 +282,21 @@ pub fn postgres_decodemsgs_ee_csv(
         }
 
         if positions.len() >= 5000 {
-            let _d = postgres_prepare_tx_dynamic(&mut c, source, positions);
+            postgres_prepare_tx_dynamic(&mut c, source, positions)?;
             positions = vec![];
         };
         if stat_msgs.len() >= 5000 {
-            let _s = postgres_prepare_tx_static(&mut c, source, stat_msgs);
+            postgres_prepare_tx_static(&mut c, source, stat_msgs)?;
             stat_msgs = vec![];
         }
     }
 
     if !positions.is_empty() {
-        let _d = postgres_prepare_tx_dynamic(&mut c, source, positions);
+        postgres_prepare_tx_dynamic(&mut c, source, positions)?;
     }
+
     if !stat_msgs.is_empty() {
-        let _s = postgres_prepare_tx_static(&mut c, source, stat_msgs);
+        postgres_prepare_tx_static(&mut c, source, stat_msgs)?;
     }
 
     let elapsed = start.elapsed();
@@ -338,7 +331,7 @@ pub fn postgres_decodemsgs_ee_csv(
 #[cfg(test)]
 pub mod tests {
 
-    use super::{decodemsgs_ee_csv, Error};
+    use super::{sqlite_decodemsgs_ee_csv, Error};
     use std::fs::File;
     use std::io::Write;
     pub use std::{
@@ -412,7 +405,7 @@ MMSI,Message_ID,Repeat_indicator,Time,Millisecond,Region,Country,Base_station,On
 
         let fpath = std::path::PathBuf::from("testdata/testingdata.csv");
 
-        let _ = decodemsgs_ee_csv(
+        let _ = sqlite_decodemsgs_ee_csv(
             &std::path::Path::new("testdata/test.db").to_path_buf(),
             &fpath,
             "TESTDATA",

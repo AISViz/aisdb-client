@@ -178,16 +178,6 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
     '''
     '''
     def _set_db_daterange(self):
-        cur = self.cursor()
-
-        coarsetype_qry = ("select table_name from information_schema.tables "
-                          "where table_name = 'coarsetype_ref'")
-
-        cur.execute(coarsetype_qry)
-        coarsetype_exists = cur.fetchone()
-
-        if not coarsetype_exists:
-            self._create_table_coarsetype()
 
         dynamic_tables_qry = (
             "select table_name from information_schema.tables "
@@ -280,10 +270,17 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         self.__repr__ = self.conn.__repr__
         #conn = psycopg.connect(conninfo=libpq_connstring)
         self.pgconn = self.conn.pgconn
-        #self = conn
 
-        #self.dbpaths = []
-        #self._set_db_daterange()
+        cur = self.cursor()
+
+        coarsetype_qry = ("select table_name from information_schema.tables "
+                          "where table_name = 'coarsetype_ref'")
+
+        cur.execute(coarsetype_qry)
+        coarsetype_exists = cur.fetchone()
+
+        if not coarsetype_exists:
+            self._create_table_coarsetype()
 
     def execute(self, sql, args=[]):
         sql = re.sub(r'\$[0-9][0-9]*', r'%s', sql)

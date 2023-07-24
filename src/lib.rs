@@ -1,5 +1,6 @@
 //! Rust exports for python API
 use std::cmp::{max, min};
+use std::fs::metadata;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread::{available_parallelism, sleep};
@@ -65,22 +66,26 @@ pub fn haversine(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
 #[pyfunction]
 #[pyo3(text_signature = "(dbpath, psql_conn_string, files, source, verbose)")]
 pub fn decoder(
-    dbpath: &str,
+    dbpath: PathBuf,
     psql_conn_string: String,
-    files: Vec<&str>,
+    files: Vec<PathBuf>,
     source: String,
     verbose: bool,
     py: Python,
-) {
-    // array tuples containing (dbpath, filepath)
-    let files = files.clone();
-    let mut path_arr = vec![];
-    for file in files {
-        path_arr.push((
-            std::path::PathBuf::from(&dbpath),
-            std::path::PathBuf::from(file),
-        ));
+) -> Vec<PathBuf> {
+    // tuples containing (dbpath, filepath)
+    let mut path_arr: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for file in &files {
+        path_arr.push((dbpath.clone(), file.to_path_buf()));
     }
+
+    // check average file size for memory allocations and multiply by 2
+    let mut bytesize: u64 = 0;
+    for file in &files {
+        bytesize += metadata(file).expect("getting file size").len();
+    }
+    bytesize /= files.len() as u64;
+    bytesize *= 2;
 
     // keep track of memory use before spawning new parallel workers
     let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
@@ -89,27 +94,42 @@ pub fn decoder(
     // reserve atleast 3.5GB of available memory for each worker thread,
     // up to a maximum of one worker per CPU
     let worker_count = min(
-        max(
-            1,
-            (sys.available_memory() as usize - 3.5e9 as usize) / 3.5e9 as usize,
+        min(
+            max(1, (sys.available_memory() - bytesize) / bytesize),
+            available_parallelism().expect("CPU count").get() as u64,
         ),
-        available_parallelism().expect("CPU count").into(),
+        files.len() as u64,
     );
     let pool = ThreadPool::builder()
-        .pool_size(worker_count)
+        .pool_size(worker_count as usize)
         .name_prefix("aisdb-decode-")
         .create()
         .expect("creating pool");
 
     // when each worker is done they will send "true" to the receiver
-    let (sender, receiver) = channel::<bool>();
+    let (sender, receiver) = channel::<Result<PathBuf, PathBuf>>();
+    let mut completed = Vec::new();
+    let mut errored = Vec::new();
+
+    fn update_done_files(
+        completed: &mut Vec<PathBuf>,
+        errored: &mut Vec<PathBuf>,
+        next: Result<PathBuf, PathBuf>,
+    ) {
+        match next {
+            Ok(p) => completed.push(p),
+            Err(p) => errored.push(p),
+        }
+    }
 
     // count workers in progress
     let mut in_process: u64 = 0;
 
     println!(
-        "memory: {:.2}GB available. spawning {} workers",
+        "Memory: {:.2}GB remaining.  CPUs: {}.  Average file size: {:.2}MB  Spawning {} workers",
         sys.available_memory() as f64 * 1e-9_f64,
+        available_parallelism().expect("CPU count"),
+        bytesize as f64 * 1e-6_f64,
         worker_count
     );
 
@@ -125,69 +145,105 @@ pub fn decoder(
         sys.refresh_memory();
 
         // wait until the system has some available memory,
-        while ((sys.available_memory() as f64) < 3.5e9 && in_process != 0)
-            || (in_process as f64 * 3.5e9 > sys.total_memory() as f64 - 3.5e9 && in_process != 0)
+        while (in_process as f64 * 3.5e9 > sys.total_memory() as f64 - 3.5e9
+            || (sys.available_memory() as f64) < 3.5e9)
+            && in_process != 0
         {
             sleep(System::MINIMUM_CPU_UPDATE_INTERVAL + Duration::from_millis(50));
             // check if keyboardinterrupt was sent
-            py.check_signals().expect("Decoder was interrupted");
+            py.check_signals()
+                .expect("Decoder interrupted while spawning workers");
             // check if worker completed a file
-            if let Ok(r) = receiver.try_recv() {
-                assert!(r);
-                in_process -= 1;
+            match receiver.try_recv() {
+                Ok(r) => {
+                    update_done_files(&mut completed, &mut errored, r);
+                    in_process -= 1;
+                }
+                Err(_r) => {
+                    sleep(std::time::Duration::from_millis(100));
+                }
             }
 
             sys.refresh_memory();
+        }
+        if verbose {
+            println!("processing {}", f.display());
         }
 
         match f.extension() {
             Some(ext_os_str) => match ext_os_str.to_str() {
                 Some("nm4") | Some("NM4") | Some("nmea") | Some("NMEA") | Some("rx")
                 | Some("txt") | Some("RX") | Some("TXT") => {
-                    if !dbpath.is_empty() {
-                        parser = sqlite_decode_insert_msgs(d, &f, &source, parser, verbose)
-                            .expect("decoding NM4");
+                    if !dbpath.to_str().unwrap().is_empty() {
+                        parser = sqlite_decode_insert_msgs(
+                            d.to_path_buf(),
+                            f.clone(),
+                            &source,
+                            parser,
+                            verbose,
+                        )
+                        .expect("decoding NM4");
                     }
                     if !psql_conn_string.is_empty() {
                         let sender = sender.clone();
-                        in_process += 1;
                         let future = async move {
-                            if verbose {
-                                println!("processing {}", f.display());
-                            }
                             let parser = NmeaParser::new();
-                            let _parser = postgres_decode_insert_msgs(
+                            match postgres_decode_insert_msgs(
                                 &psql_conn_string,
-                                &f,
+                                f.clone(),
                                 &source,
                                 parser,
                                 verbose,
-                            )
-                            .expect("decoding NM4");
-                            sender.send(true).expect("sending done message to receiver")
+                            ) {
+                                Err(_) => {
+                                    sender
+                                        .send(Err(f))
+                                        .expect("sending errored filepath from worker");
+                                }
+                                Ok(_) => sender
+                                    .send(Ok(f))
+                                    .expect("sending completed filepath from worker"),
+                            };
                         };
-
                         pool.spawn_ok(future);
+                        in_process += 1;
                     }
                 }
                 Some("csv") | Some("CSV") => {
-                    if !dbpath.is_empty() {
-                        sqlite_decodemsgs_ee_csv(d, &f, &source, verbose).expect("decoding CSV");
+                    if dbpath != PathBuf::from("") {
+                        sqlite_decodemsgs_ee_csv(d.to_path_buf(), f.clone(), &source, verbose)
+                            .expect("decoding CSV");
                     }
                     if !psql_conn_string.is_empty() {
                         let sender = sender.clone();
-                        in_process += 1;
                         let future = async move {
-                            if verbose {
-                                println!("processing {}", f.display());
-                            }
-                            postgres_decodemsgs_ee_csv(&psql_conn_string, &f, &source, verbose)
-                                .expect("decoding CSV");
-                            sender
-                                .send(true)
-                                .expect("sending 'done' message from worker thread")
+                            match postgres_decodemsgs_ee_csv(
+                                &psql_conn_string,
+                                &f,
+                                &source,
+                                verbose,
+                            ) {
+                                Err(e) => {
+                                    eprintln!("CSV decoder error: {}\n", e);
+                                    sender.send(Err(f.clone())).unwrap_or_else(|e| {
+                                        eprintln!(
+                                            "sending errored CSV filepath from worker {}\n{}",
+                                            f.display(),
+                                            e
+                                        )
+                                    });
+                                }
+                                Ok(_) => sender.send(Ok(f.clone())).unwrap_or_else(|e| {
+                                    eprintln!(
+                                        "sending completed CSV filepath from worker {}\n{}",
+                                        f.display(),
+                                        e
+                                    )
+                                }),
+                            };
                         };
                         pool.spawn_ok(future);
+                        in_process += 1;
                     }
                 }
                 _ => {
@@ -200,13 +256,29 @@ pub fn decoder(
         }
     }
     while in_process > 0 {
-        py.check_signals().expect("Decoder interrupted");
-        if let Ok(r) = receiver.try_recv() {
-            assert!(r);
-            in_process -= 1;
+        if let Err(e) = py.check_signals() {
+            eprintln!(
+                "Decoder interrupted while waiting for worker threads. Remaining: {}/{}\n{}",
+                in_process,
+                files.len(),
+                e
+            );
+            eprintln!("Completed: {:#?}", completed);
+            eprintln!("Completed with errors: {:#?}", errored);
+            break;
+        };
+        match receiver.try_recv() {
+            Ok(r) => {
+                update_done_files(&mut completed, &mut errored, r);
+                in_process -= 1;
+            }
+            Err(_r) => {
+                sleep(std::time::Duration::from_millis(100));
+            }
         }
-        sleep(std::time::Duration::from_millis(100));
     }
+
+    completed
 }
 
 /// linear curve decimation using visvalingam-whyatt algorithm.
@@ -407,13 +479,6 @@ pub fn receiver(
         > 0
     {
         py.check_signals().expect("Receiver interrupted");
-        /*
-        let signal = PyErr_CheckSignals();
-        if signal != 0 {
-            eprintln!("exiting...");
-            exit(signal);
-        }
-        */
         sleep(Duration::from_millis(500));
     }
 }

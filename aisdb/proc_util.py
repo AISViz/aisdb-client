@@ -216,7 +216,7 @@ def getfiledate(filename):
     if filesize == 0:  # pragma: no cover
         return False
     with open(filename, 'r') as f:
-        if 'csv' in filename:
+        if filename.lower()[-3:] == "csv":
             reader = csv.reader(f)
             head = next(reader)
             row1 = next(reader)

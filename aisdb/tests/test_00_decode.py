@@ -37,7 +37,6 @@ def test_decode_1day(tmpdir):
 
 
 def test_decode_1day_postgres(tmpdir):
-    dbpath = os.path.join(tmpdir, 'test_decode_1day.db')
     testingdata_nm4 = os.path.join(os.path.dirname(__file__), 'testdata',
                                    'test_data_20211101.nm4')
     testingdata_csv = os.path.join(os.path.dirname(__file__), 'testdata',
@@ -47,7 +46,7 @@ def test_decode_1day_postgres(tmpdir):
     testingdata_zip = os.path.join(os.path.dirname(__file__), 'testdata',
                                    'test_data_20211101.nm4.zip')
     filepaths = [
-        testingdata_nm4, testingdata_csv, testingdata_gz, testingdata_zip
+        testingdata_csv, testingdata_nm4, testingdata_gz, testingdata_zip
     ]
 
     with PostgresDBConn(
@@ -56,11 +55,16 @@ def test_decode_1day_postgres(tmpdir):
             port=5431,
             password='devel',
     ) as dbconn:
+
+        #dbconn.execute('TRUNCATE hashmap')
+        #dbconn.commit()
+
         dt = datetime.now()
         decode_msgs(filepaths=filepaths,
                     dbconn=dbconn,
                     source='TESTING',
-                    vacuum=True)
+                    vacuum=True,
+                    verbose=True)
         delta = datetime.now() - dt
         print(
             f'postgres total parse and insert time: {delta.total_seconds():.2f}s'
