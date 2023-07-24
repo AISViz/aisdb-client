@@ -230,6 +230,7 @@ services:
     container_name: postgresdb
     image: postgres
     restart: on-failure
+    shm_size: 10g
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     networks:

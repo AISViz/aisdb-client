@@ -6,7 +6,7 @@ from hashlib import md5
 from functools import partial
 from multiprocessing import Pool
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 import gzip
 import os
 import pickle
@@ -241,7 +241,7 @@ def decode_msgs(filepaths,
         for f in filepaths
         if f.lower()[-4:] == '.zip' or f.lower()[-3:] == '.gz'
     }
-    not_zipped = list(set(filepaths) - set(zipped))
+    not_zipped = sorted(list(set(filepaths) - set(zipped)))
     zipped_checksums = []
     not_zipped_checksums = []
     unzipped_checksums = []
@@ -267,7 +267,6 @@ def decode_msgs(filepaths,
         if skip_checksum:
             continue
         if dbindex.checksum_exists(signature):
-            print('removing', item)
             not_zipped.remove(item)
             if verbose:
                 print(f'found matching checksum, skipping {item}')
@@ -307,10 +306,12 @@ def decode_msgs(filepaths,
     if verbose:
         print('checking file dates...')
     filedates = [getfiledate(f) for f in not_zipped + unzipped]
-    filedates = [d for d in filedates if isinstance(d, date)]
     months = [
         month.strftime('%Y%m') for month in rrule(
-            MONTHLY, dtstart=min(filedates), until=max(filedates))
+            freq=MONTHLY,
+            dtstart=min(filedates) - (timedelta(days=min(filedates).day - 1)),
+            until=max(filedates),
+        )
     ]
 
     if verbose:
@@ -388,7 +389,7 @@ def decode_msgs(filepaths,
                 DELETE FROM ais_{month}_dynamic WHERE ctid IN
                     (SELECT ctid FROM
                         (SELECT *, ctid, row_number() OVER
-                            (PARTITION BY mmsi, time ORDER BY ctid)
+                            (PARTITION BY mmsi, time, source ORDER BY ctid)
                         FROM ais_{month}_dynamic ) AS duplicates_{month}
                     WHERE row_number > 1)
                 ''')
@@ -409,7 +410,8 @@ def decode_msgs(filepaths,
                 print(f'done indexing latitude: {month}')
             dbconn.execute(
                 f'CREATE UNIQUE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
-                f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude)')
+                f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude, source)'
+            )
             dbconn.commit()
             if verbose:
                 print(f'done indexing combined index: {month}')

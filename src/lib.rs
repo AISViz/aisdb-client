@@ -47,15 +47,17 @@ pub fn haversine(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
     p1.haversine_distance(&p2)
 }
 
-/// Parse NMEA-formatted strings, and create SQLite database
+/// Parse NMEA-formatted strings, and create databases
 /// from raw AIS transmissions
 ///
 /// args:
-///     dbpath (&str)
-///         output database file
-///     files (array of &str)
+///     dbpath (str)
+///         Output SQLite database path. Set this to an empty string to only use Postgres
+///     psql_conn_string (str)
+///         Postgres database connection string. Set this to an empty string to only use SQLite
+///     files (array of str)
 ///         array of .nm4 raw data filepath strings
-///     source (&str)
+///     source (str)
 ///         data source text. Will be used as a primary key index in database
 ///     verbose (bool)
 ///         enables logging
