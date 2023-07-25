@@ -17,6 +17,8 @@ use crate::db::{get_db_conn, sqlite_prepare_tx_dynamic, sqlite_prepare_tx_static
 use crate::db::{get_postgresdb_conn, postgres_prepare_tx_dynamic, postgres_prepare_tx_static};
 use crate::decode::VesselData;
 
+const BATCHSIZE: usize = 50000;
+
 /// convert time string to epoch seconds
 pub fn csvdt_2_epoch(dt: &str) -> i64 {
     let mut utctime = NaiveDateTime::parse_from_str(dt, "%Y%m%d_%H%M%S");
@@ -146,11 +148,11 @@ pub fn sqlite_decodemsgs_ee_csv(
             stat_msgs.push(message);
         }
 
-        if positions.len() >= 500000 {
+        if positions.len() >= BATCHSIZE {
             let _d = sqlite_prepare_tx_dynamic(&mut c, source, positions);
             positions = vec![];
         };
-        if stat_msgs.len() >= 500000 {
+        if stat_msgs.len() >= BATCHSIZE {
             let _s = sqlite_prepare_tx_static(&mut c, source, stat_msgs);
             stat_msgs = vec![];
         }
@@ -281,11 +283,11 @@ pub fn postgres_decodemsgs_ee_csv(
             stat_msgs.push(message);
         }
 
-        if positions.len() >= 5000 {
+        if positions.len() >= BATCHSIZE {
             postgres_prepare_tx_dynamic(&mut c, source, positions)?;
             positions = vec![];
         };
-        if stat_msgs.len() >= 5000 {
+        if stat_msgs.len() >= BATCHSIZE {
             postgres_prepare_tx_static(&mut c, source, stat_msgs)?;
             stat_msgs = vec![];
         }

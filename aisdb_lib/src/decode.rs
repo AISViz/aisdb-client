@@ -15,6 +15,8 @@ use crate::db::{get_db_conn, sqlite_prepare_tx_dynamic, sqlite_prepare_tx_static
 #[cfg(feature = "postgres")]
 use crate::db::{get_postgresdb_conn, postgres_prepare_tx_dynamic, postgres_prepare_tx_static};
 
+const BATCHSIZE: usize = 50000;
+
 /// collect decoded messages and epoch timestamps
 #[derive(Clone)]
 pub struct VesselData {
@@ -259,11 +261,11 @@ pub fn sqlite_decode_insert_msgs(
             }
         }
 
-        if positions.len() >= 5000 {
+        if positions.len() >= BATCHSIZE {
             let _d = sqlite_prepare_tx_dynamic(&mut c, source, positions);
             positions = vec![];
         };
-        if stat_msgs.len() >= 5000 {
+        if stat_msgs.len() >= BATCHSIZE {
             let _s = sqlite_prepare_tx_static(&mut c, source, stat_msgs);
             stat_msgs = vec![];
         }
@@ -323,11 +325,11 @@ pub fn postgres_decode_insert_msgs(
             }
         }
 
-        if positions.len() >= 5000 {
+        if positions.len() >= BATCHSIZE {
             postgres_prepare_tx_dynamic(&mut c, source, positions)?;
             positions = vec![];
         };
-        if stat_msgs.len() >= 5000 {
+        if stat_msgs.len() >= BATCHSIZE {
             postgres_prepare_tx_static(&mut c, source, stat_msgs)?;
             stat_msgs = vec![];
         }
