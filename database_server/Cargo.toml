@@ -5,9 +5,10 @@ edition = "2021"
 
 [lib]
 name = 'aisdb_db_server'
+path = 'src/lib.rs'
 
 [[bin]]
-name = 'aisdb_db_server'
+name = 'aisdb-db-server'
 path = 'src/main.rs'
 
 [toolchain]

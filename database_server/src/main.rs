@@ -6,7 +6,7 @@ use std::path::Path;
 use std::thread::spawn;
 
 use aisdb_db_server::aisdb_db_server::handle_client;
-use aisdb_lib::db::get_postgresdb_conn;
+use aisdb_lib::db::{get_postgresdb_conn, sql_from_file};
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // database connection config
@@ -48,6 +48,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tcp_listen_address = format!("{}:{}", allow_clients, listen_port);
     let listener = TcpListener::bind(tcp_listen_address.clone())
         .unwrap_or_else(|_| panic!("Binding address {}", tcp_listen_address));
+
+    // create database tables if necessary
+    let mut pg_main = get_postgresdb_conn(&postgres_connection_string)?;
+    pg_main.batch_execute(sql_from_file("createtable_webdata_marinetraffic.sql"))?;
+    pg_main.close()?;
 
     println!(
         "listening on {} for incoming API connections...",
