@@ -122,6 +122,8 @@ services:
     networks: 
       ipv6_private:
         ipv6_address: "fc00::6"
+    depends_on:
+      - postgresdb
 
   # proxy router
   nginx:
