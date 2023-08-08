@@ -98,7 +98,7 @@ pub fn decoder(
     let worker_count = min(
         min(
             max(1, (sys.available_memory() - bytesize) / bytesize),
-            available_parallelism().expect("CPU count").get() as u64,
+            min(32, available_parallelism().expect("CPU count").get() as u64),
         ),
         files.len() as u64,
     );
