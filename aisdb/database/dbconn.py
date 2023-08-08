@@ -56,23 +56,23 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
             self.db_daterange = {}
         self.db_daterange[dbname] = {}
         sql_qry = (f'SELECT * FROM {dbname}.sqlite_master '
-                   r'WHERE type="table" AND name LIKE "ais_%_dynamic" ')
+                r'WHERE type="table" AND name LIKE "ais_%_dynamic" ')
         try:
             cur = self.cursor()
             cur.execute(sql_qry)
             dynamic_tables = cur.fetchall()
             if dynamic_tables != []:
                 db_months = sorted(
-                    [table['name'].split('_')[1] for table in dynamic_tables])
+                        [table['name'].split('_')[1] for table in dynamic_tables])
                 self.db_daterange[dbname] = {
-                    'start':
-                    datetime(int(db_months[0][:4]), int(db_months[0][4:]),
-                             1).date(),
-                    'end':
-                    datetime((y := int(db_months[-1][:4])),
-                             (m := int(db_months[-1][4:])),
-                             monthrange(y, m)[1]).date(),
-                }
+                        'start':
+                        datetime(int(db_months[0][:4]), int(db_months[0][4:]),
+                            1).date(),
+                        'end':
+                        datetime((y := int(db_months[-1][:4])),
+                            (m := int(db_months[-1][4:])),
+                            monthrange(y, m)[1]).date(),
+                        }
         except Exception as err:
             warnings.warn(str(err.with_traceback(None)))
         finally:
@@ -82,9 +82,9 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
         # configs
         self.dbpaths = []
         super().__init__(':memory:',
-                         timeout=5,
-                         detect_types=sqlite3.PARSE_DECLTYPES
-                         | sqlite3.PARSE_COLNAMES)
+                timeout=5,
+                detect_types=sqlite3.PARSE_DECLTYPES
+                | sqlite3.PARSE_COLNAMES)
         self.row_factory = sqlite3.Row
         self._create_table_coarsetype()
 
@@ -132,8 +132,8 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
 
         # check if the database contains marinetraffic data
         sql_qry_traffictable = (
-            f'SELECT * FROM {dbname}.sqlite_master '
-            'WHERE type="table" AND name = "webdata_marinetraffic"')
+                f'SELECT * FROM {dbname}.sqlite_master '
+                'WHERE type="table" AND name = "webdata_marinetraffic"')
         cur = self.execute(sql_qry_traffictable)
         if len(cur.fetchall()) > 0:
             self.trafficdb = dbpath
@@ -176,13 +176,13 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             dbconn = PostgresDBConn('Postgresql://localhost:5433')
 
     '''
-    '''
     def _set_db_daterange(self):
 
         dynamic_tables_qry = (
-            "select table_name from information_schema.tables "
-            r"where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name"
-        )
+                "select table_name from information_schema.tables "
+                r"where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name"
+                )
+        cur = self.cursor()
         cur.execute(dynamic_tables_qry)
         res = cur.fetchall()
 
@@ -194,14 +194,13 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
 
             min_qry = f'SELECT MIN(time) FROM {first}'
             cur.execute(min_qry)
-            min_time = datetime.utcfromtimestamp(cur.fetchone()[0])
+            min_time = datetime.utcfromtimestamp(cur.fetchone()[0]).date()
 
             max_qry = f'SELECT MAX(time) FROM {last}'
             cur.execute(max_qry)
-            max_time = datetime.utcfromtimestamp(cur.fetchone()[0])
+            max_time = datetime.utcfromtimestamp(cur.fetchone()[0]).date()
 
             self.db_daterange = {'start': min_time, 'end': max_time}
-    '''
 
     def __enter__(self):
         self.conn.__enter__()
@@ -274,13 +273,15 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         cur = self.cursor()
 
         coarsetype_qry = ("select table_name from information_schema.tables "
-                          "where table_name = 'coarsetype_ref'")
+                "where table_name = 'coarsetype_ref'")
 
         cur.execute(coarsetype_qry)
         coarsetype_exists = cur.fetchone()
 
         if not coarsetype_exists:
             self._create_table_coarsetype()
+
+        self._set_db_daterange()
 
     def execute(self, sql, args=[]):
         sql = re.sub(r'\$[0-9][0-9]*', r'%s', sql)
@@ -290,14 +291,14 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
     def rebuild_indexes(self, month, vacuum=False, verbose=True):
         dbconn = self.conn
         dbconn.execute(
-            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
-            f'ON ais_{month}_dynamic (mmsi)')
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
+                f'ON ais_{month}_dynamic (mmsi)')
         dbconn.commit()
         if verbose:
             print(f'done indexing mmsi: {month}')
         dbconn.execute(
-            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_time '
-            f'ON ais_{month}_dynamic (time)')
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_time '
+                f'ON ais_{month}_dynamic (time)')
         dbconn.commit()
         if verbose:
             print(f'done indexing time: {month}')
@@ -313,34 +314,46 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         #if verbose:
         #    print(f'done deduplicating: {month}')
         dbconn.execute(
-            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
-            f'ON ais_{month}_dynamic (longitude)')
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
+                f'ON ais_{month}_dynamic (longitude)')
         dbconn.commit()
         if verbose:
             print(f'done indexing longitude: {month}')
         dbconn.execute(
-            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lat '
-            f'ON ais_{month}_dynamic (latitude)')
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lat '
+                f'ON ais_{month}_dynamic (latitude)')
         dbconn.commit()
         if verbose:
             print(f'done indexing latitude: {month}')
         dbconn.execute(
-            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
-            f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude, source)'
-        )
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
+                f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude, source)'
+                )
         dbconn.commit()
         if verbose:
             print(f'done indexing combined index: {month}')
+        dbconn.execute(
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_static_mmsi '
+                f'ON ais_{month}_static (mmsi)')
+        dbconn.commit()
+        if verbose:
+            print(f'done indexing static mmsi: {month}')
+        dbconn.execute(
+                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_static_time '
+                f'ON ais_{month}_static (time)')
+        dbconn.commit()
+        if verbose:
+            print(f'done indexing static time: {month}')
         if vacuum is True and isinstance(dbconn, PostgresDBConn):
             dbconn.commit()
             previous = dbconn.conn.autocommit
             dbconn.conn.autocommit = True
             dbconn.execute(
-                f'VACUUM (analyze, index_cleanup, verbose, parallel 3) ais_{month}_dynamic'
-            )
+                    f'VACUUM (analyze, index_cleanup, verbose, parallel 3) ais_{month}_dynamic'
+                    )
             dbconn.conn.autocommit = previous
 
-    def deduplicate_dynamic_msgs(self, month, verbose=True):
+    def deduplicate_dynamic_msgs(self, month: str, verbose=True):
         dbconn = self.conn
         dbconn.execute(f'''
             DELETE FROM ais_{month}_dynamic WHERE ctid IN
