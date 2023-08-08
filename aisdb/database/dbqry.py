@@ -159,7 +159,7 @@ class DBQuery(UserDict):
             verbose: bool = False):
         # check if static tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
-                f'WHERE table_name = ais_{month}_static')
+                f'WHERE table_name = \'ais_{month}_static\'')
         if len(cur.fetchall()) == 0:
             #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
             warnings.warn('No static data for selected time range! '
@@ -167,7 +167,7 @@ class DBQuery(UserDict):
 
         # check if aggregate tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
-                f'WHERE table_name = static_{month}_aggregate')
+                f'WHERE table_name = \'static_{month}_aggregate\'')
         res = cur.fetchall()
 
         if len(res) == 0 or reaggregate_static:
@@ -178,7 +178,7 @@ class DBQuery(UserDict):
 
         # check if dynamic tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
-                f'WHERE table_name = ais_{month}_dynamic')
+                f'WHERE table_name = \'ais_{month}_dynamic\'')
 
         if len(cur.fetchall()) == 0:  # pragma: no cover
             if isinstance(self.dbconn, ConnectionType.SQLITE.value):
