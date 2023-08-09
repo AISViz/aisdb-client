@@ -54,8 +54,9 @@ def _append_highscore(track, *, highscoreidx, pathways, i, segments_idx):
         **{k: track[k]
            for k in track['static']},
         **{
-            k: np.append(pathways[highscoreidx][k],
-                         track[k][segments_idx[i]:segments_idx[i + 1]])
+            k:
+            np.append(pathways[highscoreidx][k],
+                      track[k][segments_idx[i]:segments_idx[i + 1]])
             for k in track['dynamic']
         },
         static=track['static'],
@@ -178,7 +179,7 @@ def encode_greatcircledistance(
 
         >>> with DBConn() as dbconn:
         ...     decode_msgs(filepaths=filepaths, dbconn=dbconn,
-        ...     dbpath=dbpath, source='TESTING')
+        ...                 dbpath=dbpath, source='TESTING', verbose=False)
 
         >>> with DBConn() as dbconn:
         ...     q = DBQuery(callback=sqlfcn_callbacks.in_timerange_validmmsi,

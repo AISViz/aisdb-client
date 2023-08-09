@@ -12,9 +12,10 @@ import numpy as np
 import psycopg
 
 from aisdb.database import sqlfcn, sqlfcn_callbacks
-from aisdb.database.create_tables import (aggregate_static_msgs,
-        sqlite_createtable_dynamicreport,
-        sqlite_createtable_staticreport)
+from aisdb.database.create_tables import (
+    aggregate_static_msgs,
+    sqlite_createtable_dynamicreport,
+)
 from aisdb.database.dbconn import ConnectionType, PostgresDBConn, SQLiteDBConn
 from aisdb.webdata.marinetraffic import VesselInfo
 
@@ -63,14 +64,14 @@ class DBQuery(UserDict):
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv', 'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with DBConn() as dbconn:
         ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
-        ...     source='TESTING')
+        ...                 source='TESTING', verbose=False)
         ...     q = DBQuery(dbconn=dbconn,
         ...                 dbpath=dbpath,
         ...                 callback=in_timerange_validmmsi,
         ...                 start=start,
         ...                 end=end)
         ...     for rows in q.gen_qry():
-    	...         print(str(dict(rows[0])))
+        ...         print(str(dict(rows[0])))
         ...         break
         {'mmsi': 204242000, 'time': 1625176725, 'longitude': -8.93166666667, 'latitude': 41.45, 'sog': 4.0, 'cog': 176.0}
     '''
@@ -79,15 +80,15 @@ class DBQuery(UserDict):
         if isinstance(dbconn, SQLiteDBConn):
             if dbpaths == [] and dbpath is None:
                 raise ValueError(
-                        'must supply either dbpaths list or dbpath string value')
+                    'must supply either dbpaths list or dbpath string value')
             elif dbpaths == []:  # pragma: no cover
                 dbpaths = [dbpath]
 
         elif isinstance(dbconn, PostgresDBConn):
             if dbpath is not None:
                 raise ValueError(
-                        "the dbpath argument may not be used with a Postgres connection"
-                        )
+                    "the dbpath argument may not be used with a Postgres connection"
+                )
         else:
             raise ValueError("Invalid database connection")
 
@@ -95,9 +96,9 @@ class DBQuery(UserDict):
             dbconn._attach(dbpath)
         if isinstance(dbconn, ConnectionType):
             raise ValueError('Invalid database connection.'
-                    f' Got: {dbconn}.'
-                    f'Requires: {ConnectionType.SQLITE.value}'
-                    f' or {ConnectionType.POSTGRES.value}')
+                             f' Got: {dbconn}.'
+                             f'Requires: {ConnectionType.SQLITE.value}'
+                             f' or {ConnectionType.POSTGRES.value}')
 
         self.data = kwargs
         self.dbconn = dbconn
@@ -111,88 +112,88 @@ class DBQuery(UserDict):
         self.data.update({'months': sqlfcn_callbacks.dt2monthstr(**self.data)})
 
     def _build_tables_sqlite(self,
-            cur: sqlite3.Cursor,
-            month: str,
-            rng_string: str,
-            dbname: str,
-            reaggregate_static: bool = False,
-            verbose: bool = False):
+                             cur: sqlite3.Cursor,
+                             month: str,
+                             rng_string: str,
+                             dbname: str,
+                             reaggregate_static: bool = False,
+                             verbose: bool = False):
         # check if static tables exist
         cur.execute(
-                f'SELECT * FROM {dbname}.sqlite_master '
-                'WHERE type="table" AND name=?', [f'ais_{month}_static'])
+            f'SELECT * FROM {dbname}.sqlite_master '
+            'WHERE type="table" AND name=?', [f'ais_{month}_static'])
         if len(cur.fetchall()) == 0:
             #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
             warnings.warn('No static data for selected time range! '
-                    f'{dbname} '
-                    f'{rng_string}')
+                          f'{dbname} '
+                          f'{rng_string}')
 
         # check if aggregate tables exist
         cur.execute((f'SELECT * FROM {dbname}.sqlite_master '
-            'WHERE type="table" and name=?'),
-            [f'static_{month}_aggregate'])
+                     'WHERE type="table" and name=?'),
+                    [f'static_{month}_aggregate'])
         res = cur.fetchall()
 
         if len(res) == 0 or reaggregate_static:
             if verbose:
                 print(f'building static index for month {month}...',
-                        flush=True)
+                      flush=True)
             aggregate_static_msgs(self.dbconn, [month], verbose)
 
         # check if dynamic tables exist
         cur.execute(
-                f'SELECT * FROM {dbname}.sqlite_master WHERE '
-                'type="table" and name=?', [f'ais_{month}_dynamic'])
+            f'SELECT * FROM {dbname}.sqlite_master WHERE '
+            'type="table" and name=?', [f'ais_{month}_dynamic'])
         if len(cur.fetchall()) == 0:
             if isinstance(self.dbconn, ConnectionType.SQLITE.value):
                 sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
 
             warnings.warn('No data for selected time range! '
-                    f'{dbname} '
-                    f'{rng_string}')
+                          f'{dbname} '
+                          f'{rng_string}')
 
     def _build_tables_postgres(self,
-            cur: psycopg.Cursor,
-            month: str,
-            rng_string: str,
-            reaggregate_static: bool = False,
-            verbose: bool = False):
+                               cur: psycopg.Cursor,
+                               month: str,
+                               rng_string: str,
+                               reaggregate_static: bool = False,
+                               verbose: bool = False):
         # check if static tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
-                f'WHERE table_name = \'ais_{month}_static\'')
+                    f'WHERE table_name = \'ais_{month}_static\'')
         if len(cur.fetchall()) == 0:
             #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
             warnings.warn('No static data for selected time range! '
-                    f'{rng_string}')
+                          f'{rng_string}')
 
         # check if aggregate tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
-                f'WHERE table_name = \'static_{month}_aggregate\'')
+                    f'WHERE table_name = \'static_{month}_aggregate\'')
         res = cur.fetchall()
 
         if len(res) == 0 or reaggregate_static:
             if verbose:
                 print(f'building static index for month {month}...',
-                        flush=True)
+                      flush=True)
             aggregate_static_msgs(self.dbconn, [month], verbose)
 
         # check if dynamic tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
-                f'WHERE table_name = \'ais_{month}_dynamic\'')
+                    f'WHERE table_name = \'ais_{month}_dynamic\'')
 
         if len(cur.fetchall()) == 0:  # pragma: no cover
             if isinstance(self.dbconn, ConnectionType.SQLITE.value):
                 sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
 
             warnings.warn('No data for selected time range! '
-                    f'{self.dbconn._get_dbname(dbpath)} '
-                    f'{rng_string}')
+                          f'{self.dbconn._get_dbname(dbpath)} '
+                          f'{rng_string}')
 
     def check_marinetraffic(self,
-            dbpath,
-            trafficDBpath,
-            boundary,
-            retry_404=False):
+                            dbpath,
+                            trafficDBpath,
+                            boundary,
+                            retry_404=False):
         ''' scrape metadata for vessels in domain from marinetraffic
 
             args:
@@ -217,16 +218,16 @@ class DBQuery(UserDict):
 
             # skip missing tables
             if self.dbconn.execute(
-                    (f'SELECT * FROM {dbname}.sqlite_master '
-                        'WHERE type="table" and name=?'),
-                    [f'ais_{month}_dynamic']).fetchall() == 0:  # pragma: no cover
+                (f'SELECT * FROM {dbname}.sqlite_master '
+                 'WHERE type="table" and name=?'),
+                [f'ais_{month}_dynamic']).fetchall() == 0:  # pragma: no cover
                 continue
 
             # check unique mmsis
             sql = (
-                    'SELECT DISTINCT(mmsi) '
-                    f'FROM {dbname}.ais_{month}_dynamic AS d WHERE '
-                    f'{sqlfcn_callbacks.in_validmmsi_bbox(alias="d", **boundary)}')
+                'SELECT DISTINCT(mmsi) '
+                f'FROM {dbname}.ais_{month}_dynamic AS d WHERE '
+                f'{sqlfcn_callbacks.in_validmmsi_bbox(alias="d", **boundary)}')
             mmsis = self.dbconn.execute(sql).fetchall()
             print('.', end='', flush=True)  # first dot
 
@@ -234,13 +235,13 @@ class DBQuery(UserDict):
             if len(mmsis) > 0:  # pragma: no cover
                 # not covered due to caching used for testing
                 vinfo.vessel_info_callback(mmsis=np.array(mmsis),
-                        retry_404=retry_404,
-                        infotxt=f'{month} ')
+                                           retry_404=retry_404,
+                                           infotxt=f'{month} ')
 
     def gen_qry(self,
-            fcn=sqlfcn.crawl_dynamic,
-            reaggregate_static=False,
-            verbose=False):
+                fcn=sqlfcn.crawl_dynamic,
+                reaggregate_static=False,
+                verbose=False):
         ''' queries the database using the supplied SQL function and dbpath.
             generator only stores one item at at time before yielding
 
@@ -303,7 +304,7 @@ class DBQuery(UserDict):
                 month_date = datetime(int(month[:4]), int(month[4:]), 1)
                 qry_start = self["start"] - timedelta(days=self["start"].day)
                 assert qry_start <= month_date <= self[
-                        'end'], f'{month_date} not in range ({qry_start}->{self["end"]})'
+                    'end'], f'{month_date} not in range ({qry_start}->{self["end"]})'
 
                 rng_string = f'{db_rng["start"].year}-{db_rng["start"].month:02d}-{db_rng["start"].day:02d}'
                 rng_string += ' -> '
@@ -311,11 +312,11 @@ class DBQuery(UserDict):
 
                 if isinstance(self.dbconn, SQLiteDBConn):
                     self._build_tables_sqlite(cur, month, rng_string,
-                            self.dbconn._get_dbname(dbpath),
-                            reaggregate_static, verbose)
+                                              self.dbconn._get_dbname(dbpath),
+                                              reaggregate_static, verbose)
                 elif isinstance(self.dbconn, PostgresDBConn):
                     self._build_tables_postgres(cur, month, rng_string,
-                            reaggregate_static, verbose)
+                                                reaggregate_static, verbose)
                 else:
                     assert False
 
@@ -332,8 +333,8 @@ class DBQuery(UserDict):
             delta = datetime.now() - dt
             if verbose:
                 print(
-                        f'query time: {delta.total_seconds():.2f}s\nfetching rows...'
-                        )
+                    f'query time: {delta.total_seconds():.2f}s\nfetching rows...'
+                )
             if res == []:
                 # raise SyntaxError(f'no results for query!\n{qry}')
                 warnings.warn('No results for query!')
@@ -341,11 +342,11 @@ class DBQuery(UserDict):
             while len(res) > 0:
                 mmsi_rows += res
                 ummsi_idx = np.where(
-                        np.array(mmsi_rows)[:-1,
-                            0] != np.array(mmsi_rows)[1:,
-                                0])[0] + 1
+                    np.array(mmsi_rows)[:-1,
+                                        0] != np.array(mmsi_rows)[1:,
+                                                                  0])[0] + 1
                 ummsi_idx = reduce(np.append,
-                        ([0], ummsi_idx, [len(mmsi_rows)]))
+                                   ([0], ummsi_idx, [len(mmsi_rows)]))
                 for i in range(len(ummsi_idx) - 2):
                     yield mmsi_rows[ummsi_idx[i]:ummsi_idx[i + 1]]
                 if len(ummsi_idx) > 2:

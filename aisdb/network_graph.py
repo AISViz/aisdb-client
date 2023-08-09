@@ -370,7 +370,7 @@ def graph(
         ...              './aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with DBConn() as dbconn:
         ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
-        ...     source='TESTING')
+        ...     source='TESTING', verbose=False)
 
         Next, configure query area using Domain to compute region boundary
 

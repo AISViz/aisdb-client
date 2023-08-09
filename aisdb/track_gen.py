@@ -108,7 +108,7 @@ def TrackGen(rowgen: iter, decimate: False) -> dict:
         ...              'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with DBConn() as dbconn:
         ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
-        ...     source='TESTING')
+        ...                 source='TESTING', verbose=False)
         ...     q = DBQuery(callback=sqlfcn_callbacks.in_timerange_validmmsi,
         ...             dbconn=dbconn,
         ...             dbpath=dbpath,
