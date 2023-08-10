@@ -18,8 +18,11 @@ import warnings
 import psycopg
 from dateutil.rrule import rrule, MONTHLY
 
-from aisdb import aggregate_static_msgs
 from aisdb.aisdb import decoder
+from aisdb.database.create_tables import (
+    aggregate_static_msgs_postgres,
+    aggregate_static_msgs_sqlite,
+)
 from aisdb.database.dbconn import SQLiteDBConn, PostgresDBConn
 from aisdb.proc_util import getfiledate
 from aisdb import sqlpath
@@ -383,7 +386,6 @@ def decode_msgs(filepaths,
     #dbindex.dbconn.close()
 
     ###
-    '''
     if isinstance(dbconn, SQLiteDBConn):
         #dbconn._set_db_daterange(dbconn._get_dbname(dbpath))
         dbconn._attach(dbpath)
@@ -399,8 +401,12 @@ def decode_msgs(filepaths,
             MONTHLY, dtstart=date_range['start'], until=date_range['end'])
     ]
 
-    aggregate_static_msgs(dbconn, months, verbose)
-    '''
+    if isinstance(dbconn, SQLiteDBConn):
+        aggregate_static_msgs_sqlite(dbconn, months, verbose)
+    elif isinstance(dbconn, PostgresDBConn):
+        aggregate_static_msgs_postgres(dbconn, months, verbose)
+    else:
+        assert False
 
     if vacuum is not False:
         print("finished parsing data\nvacuuming...")

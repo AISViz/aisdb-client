@@ -13,15 +13,9 @@ sqlpath = os.path.abspath(os.path.join(os.path.dirname(__file__), 'aisdb_sql'))
 
 import aisdb.web_interface
 
-from .database.create_tables import (
-    aggregate_static_msgs,
-    sqlite_createtable_dynamicreport,
-    sqlite_createtable_staticreport,
-)
+from .database.decoder import decode_msgs
 
 from .database.dbconn import DBConn, SQLiteDBConn, PostgresDBConn
-
-from .database.decoder import decode_msgs
 
 from .database.dbqry import DBQuery
 

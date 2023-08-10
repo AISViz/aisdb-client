@@ -8,7 +8,8 @@ from aisdb.database.create_tables import (
     sqlite_createtable_dynamicreport,
     sqlite_createtable_staticreport,
 )
-from aisdb import decode_msgs, DBConn, aggregate_static_msgs
+from aisdb import decode_msgs, DBConn
+from aisdb.database.create_tables import aggregate_static_msgs_sqlite
 
 postgres_test_conn = dict(hostaddr='fc00::17',
                           user='postgres',
@@ -90,6 +91,6 @@ def sample_database_file(dbpath):
             vacuum=False,
             skip_checksum=True,
         )
-        aggregate_static_msgs(dbconn, months[:1])
+        aggregate_static_msgs_sqlite(dbconn, months[:1])
         dbconn.commit()
     return months

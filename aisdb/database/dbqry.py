@@ -13,7 +13,8 @@ import psycopg
 
 from aisdb.database import sqlfcn, sqlfcn_callbacks
 from aisdb.database.create_tables import (
-    aggregate_static_msgs,
+    aggregate_static_msgs_postgres,
+    aggregate_static_msgs_sqlite,
     sqlite_createtable_dynamicreport,
 )
 from aisdb.database.dbconn import ConnectionType, PostgresDBConn, SQLiteDBConn
@@ -138,7 +139,7 @@ class DBQuery(UserDict):
             if verbose:
                 print(f'building static index for month {month}...',
                       flush=True)
-            aggregate_static_msgs(self.dbconn, [month], verbose)
+            aggregate_static_msgs_sqlite(self.dbconn, [month], verbose)
 
         # check if dynamic tables exist
         cur.execute(
@@ -175,18 +176,16 @@ class DBQuery(UserDict):
             if verbose:
                 print(f'building static index for month {month}...',
                       flush=True)
-            aggregate_static_msgs(self.dbconn, [month], verbose)
+            aggregate_static_msgs_postgres(self.dbconn, [month], verbose)
 
         # check if dynamic tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
                     f'WHERE table_name = \'ais_{month}_dynamic\'')
 
         if len(cur.fetchall()) == 0:  # pragma: no cover
-            if isinstance(self.dbconn, ConnectionType.SQLITE.value):
-                sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
-
+            #if isinstance(self.dbconn, ConnectionType.SQLITE.value):
+            #    sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
             warnings.warn('No data for selected time range! '
-                          f'{self.dbconn._get_dbname(dbpath)} '
                           f'{rng_string}')
 
     def check_marinetraffic(self,

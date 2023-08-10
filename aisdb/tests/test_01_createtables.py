@@ -5,7 +5,7 @@ import sqlite3
 from aisdb.database.dbconn import DBConn, PostgresDBConn
 from aisdb.database.decoder import decode_msgs
 from aisdb.database.create_tables import (
-    aggregate_static_msgs,
+    aggregate_static_msgs_sqlite,
     sqlite_createtable_dynamicreport,
     sqlite_createtable_staticreport,
 )
@@ -34,7 +34,7 @@ def test_create_static_aggregate_table(tmpdir):
                     dbconn=dbconn,
                     dbpath=dbpath,
                     source='TESTING')
-        aggregate_static_msgs(dbconn, ["202107"])
+        aggregate_static_msgs_sqlite(dbconn, ["202107"])
 
 
 def test_create_from_CSV(tmpdir):
@@ -65,7 +65,7 @@ def test_create_from_CSV(tmpdir):
         rows = curr.fetchall()
         temp = [row['name'] for row in rows]
         print(temp)
-        assert len(temp) == 3
+        assert len(temp) == 4
 
     # alternatively, open a new connection to the database:
     new_dbconn = sqlite3.Connection(dbpath)
@@ -76,7 +76,7 @@ def test_create_from_CSV(tmpdir):
     rows = new_cursor.fetchall()
     temp = [row['name'] for row in rows]
     print(temp)
-    assert len(temp) == 3
+    assert len(temp) == 4
 
 
 def test_create_from_CSV_postgres(tmpdir):
