@@ -4,10 +4,18 @@ from datetime import datetime, timedelta
 
 from shapely.geometry import Polygon
 
-from aisdb import DBConn, DBQuery, sqlfcn_callbacks, Domain, sqlfcn
+from aisdb import (
+    DBConn,
+    DBQuery,
+    Domain,
+    PostgresDBConn,
+    sqlfcn,
+    sqlfcn_callbacks,
+)
 
 from aisdb.database.create_tables import sqlite_createtable_dynamicreport
 from aisdb.tests.create_testing_data import (
+    postgres_test_conn,
     sample_database_file,
     sample_gulfstlawrence_bbox,
 )
@@ -76,6 +84,36 @@ def test_sql_query_strings(tmpdir):
             rowgen = DBQuery(
                 dbconn=aisdatabase,
                 dbpath=testdbpath,
+                start=start,
+                end=end,
+                **domain.boundary,
+                callback=callback,
+                mmsi=316000000,
+                mmsis=[316000000, 316000001],
+            ).gen_qry(fcn=sqlfcn.crawl_dynamic_static)
+            next(rowgen)
+
+
+def test_sql_query_postgres(tmpdir):
+    #testdbpath = os.path.join(tmpdir, 'test_sql_query_strings.db')
+    #months = sample_database_file(testdbpath)
+    months = ['202107', '202111']
+    start = datetime(int(months[0][0:4]), int(months[0][4:6]), 1)
+    end = start + timedelta(weeks=4)
+    z1 = Polygon(zip(*sample_gulfstlawrence_bbox()))
+    domain = Domain('gulf domain', zones=[{'name': 'z1', 'geometry': z1}])
+    with PostgresDBConn(**postgres_test_conn) as aisdatabase:
+        for callback in [
+                sqlfcn_callbacks.in_bbox,
+                sqlfcn_callbacks.in_bbox_time,
+                sqlfcn_callbacks.in_bbox_time_validmmsi,
+                sqlfcn_callbacks.in_time_bbox_inmmsi,
+                sqlfcn_callbacks.in_timerange,
+                sqlfcn_callbacks.in_timerange_hasmmsi,
+                sqlfcn_callbacks.in_timerange_validmmsi,
+        ]:
+            rowgen = DBQuery(
+                dbconn=aisdatabase,
                 start=start,
                 end=end,
                 **domain.boundary,

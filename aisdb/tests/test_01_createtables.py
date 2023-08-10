@@ -9,6 +9,7 @@ from aisdb.database.create_tables import (
     sqlite_createtable_dynamicreport,
     sqlite_createtable_staticreport,
 )
+from aisdb.tests.create_testing_data import postgres_test_conn
 
 
 def test_create_static_table(tmpdir):
@@ -81,12 +82,7 @@ def test_create_from_CSV(tmpdir):
 def test_create_from_CSV_postgres(tmpdir):
     testingdata_csv = os.path.join(os.path.dirname(__file__), 'testdata',
                                    'test_data_20210701.csv')
-    with PostgresDBConn(
-            hostaddr='fc00::17',
-            user='postgres',
-            port=5431,
-            password='devel',
-    ) as dbconn:
+    with PostgresDBConn(**postgres_test_conn) as dbconn:
         #dbconn.execute('DROP TABLE IF EXISTS ais_202107_dynamic')
         #dbconn.execute('DROP TABLE IF EXISTS hashmap')
         decode_msgs(

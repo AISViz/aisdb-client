@@ -3,6 +3,7 @@ from datetime import datetime
 
 from aisdb.database.dbconn import DBConn, PostgresDBConn
 from aisdb.database.decoder import decode_msgs
+from aisdb.tests.create_testing_data import postgres_test_conn
 
 
 def test_decode_1day(tmpdir):
@@ -49,12 +50,7 @@ def test_decode_1day_postgres(tmpdir):
         testingdata_csv, testingdata_nm4, testingdata_gz, testingdata_zip
     ]
 
-    with PostgresDBConn(
-            hostaddr='fc00::17',
-            user='postgres',
-            port=5431,
-            password='devel',
-    ) as dbconn:
+    with PostgresDBConn(**postgres_test_conn) as dbconn:
 
         #dbconn.execute('TRUNCATE hashmap')
         #dbconn.commit()

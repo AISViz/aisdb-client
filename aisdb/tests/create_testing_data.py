@@ -10,6 +10,11 @@ from aisdb.database.create_tables import (
 )
 from aisdb import decode_msgs, DBConn, aggregate_static_msgs
 
+postgres_test_conn = dict(hostaddr='fc00::17',
+                          user='postgres',
+                          port=5431,
+                          password='devel')
+
 
 def sample_dynamictable_insertdata(*, dbconn, dbpath):
     #db = DBConn()
