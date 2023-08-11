@@ -26,7 +26,7 @@ class DBQuery(UserDict):
         passed to __init__(). Args are stored as a dictionary (UserDict).
 
         Args:
-            dbconn (:class:`aisdb.database.dbconn.DBConn`)
+            dbconn (:class:`aisdb.database.dbconn.ConnectionType`)
                 database connection object
             callback (function)
                 anonymous function yielding SQL code specifying "WHERE"
@@ -45,26 +45,23 @@ class DBQuery(UserDict):
 
 
         Custom SQL queries are supported by modifying the fcn supplied to
-        .gen_qry() and .async_qry(), or by supplying a callback function.
+        .gen_qry(), or by supplying a callback function.
         Alternatively, the database can also be queried directly, see
-        DBConn.py for more info
+        dbconn.py for more info
 
         complete example:
 
         >>> import os
         >>> from datetime import datetime
-        >>> from aisdb import DBConn, DBQuery, decode_msgs
+        >>> from aisdb import SQLiteDBConn, DBQuery, decode_msgs
         >>> from aisdb.database.sqlfcn_callbacks import in_timerange_validmmsi
 
         >>> dbpath = './testdata/test.db'
         >>> start, end = datetime(2021, 7, 1), datetime(2021, 7, 7)
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv', 'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with SQLiteDBConn(dbpath) as dbconn:
-        ...     decode_msgs(filepaths, dbconn, source='TESTING', verbose=False)
-        ...     q = DBQuery(dbconn=dbconn,
-        ...                 callback=in_timerange_validmmsi,
-        ...                 start=start,
-        ...                 end=end)
+        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, source='TESTING', verbose=False)
+        ...     q = DBQuery(dbconn=dbconn, callback=in_timerange_validmmsi, start=start, end=end)
         ...     for rows in q.gen_qry():
         ...         print(str(dict(rows[0])))
         ...         break

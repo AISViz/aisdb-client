@@ -107,12 +107,11 @@ def TrackGen(rowgen: iter, decimate: False) -> dict:
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv',
         ...              'aisdb/tests/testdata/test_data_20211101.nm4']
         >>> with SQLiteDBConn(dbpath) as dbconn:
-        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn,
-        ...                 source='TESTING', verbose=False)
+        ...     decode_msgs(filepaths, dbconn=dbconn, source='TESTING', verbose=False)
         ...     q = DBQuery(callback=sqlfcn_callbacks.in_timerange_validmmsi,
-        ...             dbconn=dbconn,
-        ...             start=datetime(2021, 7, 1),
-        ...             end=datetime(2021, 7, 7))
+        ...                 dbconn=dbconn,
+        ...                 start=datetime(2021, 7, 1),
+        ...                 end=datetime(2021, 7, 7))
         ...     rowgen = q.gen_qry()
         ...     for track in TrackGen(rowgen, decimate=True):
         ...         print(track['mmsi'], track['lon'], track['lat'], track['time'])
