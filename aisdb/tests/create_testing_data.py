@@ -17,11 +17,11 @@ postgres_test_conn = dict(hostaddr='fc00::17',
                           password='devel')
 
 
-def sample_dynamictable_insertdata(*, dbconn, dbpath):
+def sample_dynamictable_insertdata(*, dbconn):
     #db = DBConn()
     assert isinstance(dbconn, DBConn)
-    sqlite_createtable_staticreport(dbconn, month="200001", dbpath=dbpath)
-    sqlite_createtable_dynamicreport(dbconn, month="200001", dbpath=dbpath)
+    sqlite_createtable_staticreport(dbconn, month="200001")
+    sqlite_createtable_dynamicreport(dbconn, month="200001")
     dbconn.execute(
         'INSERT OR IGNORE INTO ais_200001_dynamic (mmsi, time, longitude, latitude, cog, sog) VALUES (000000001, 946702800, -60.994833, 47.434647238127695, -1, -1)'
     )
@@ -81,12 +81,10 @@ def sample_database_file(dbpath):
     datapath_nm4 = os.path.join(os.path.dirname(__file__), 'testdata',
                                 'test_data_20211101.nm4')
     months = ["202107", "202111"]
-    with DBConn() as dbconn:
-        dbconn._attach(dbpath)
+    with DBConn(dbpath) as dbconn:
         decode_msgs(
             dbconn=dbconn,
             filepaths=[datapath_csv, datapath_nm4],
-            dbpath=dbpath,
             source='TESTING',
             vacuum=False,
             skip_checksum=True,

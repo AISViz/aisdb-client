@@ -17,7 +17,7 @@ from aisdb.database.create_tables import (
     aggregate_static_msgs_sqlite,
     sqlite_createtable_dynamicreport,
 )
-from aisdb.database.dbconn import ConnectionType, PostgresDBConn, SQLiteDBConn
+from aisdb.database.dbconn import PostgresDBConn, SQLiteDBConn
 from aisdb.webdata.marinetraffic import VesselInfo
 
 
@@ -28,10 +28,6 @@ class DBQuery(UserDict):
         Args:
             dbconn (:class:`aisdb.database.dbconn.DBConn`)
                 database connection object
-            dbpath (string)
-                database filepath to connect to
-            dbpaths (list)
-                optionally pass a list of filepaths instead of a single dbpath
             callback (function)
                 anonymous function yielding SQL code specifying "WHERE"
                 clauses. common queries are included in
@@ -63,11 +59,9 @@ class DBQuery(UserDict):
         >>> dbpath = './testdata/test.db'
         >>> start, end = datetime(2021, 7, 1), datetime(2021, 7, 7)
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv', 'aisdb/tests/testdata/test_data_20211101.nm4']
-        >>> with DBConn() as dbconn:
-        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
-        ...                 source='TESTING', verbose=False)
+        >>> with SQLiteDBConn(dbpath) as dbconn:
+        ...     decode_msgs(filepaths, dbconn, source='TESTING', verbose=False)
         ...     q = DBQuery(dbconn=dbconn,
-        ...                 dbpath=dbpath,
         ...                 callback=in_timerange_validmmsi,
         ...                 start=start,
         ...                 end=end)
@@ -77,7 +71,16 @@ class DBQuery(UserDict):
         {'mmsi': 204242000, 'time': 1625176725, 'longitude': -8.93166666667, 'latitude': 41.45, 'sog': 4.0, 'cog': 176.0}
     '''
 
+    #        dbpath (string)
+    #            database filepath to connect to
+    #        dbpaths (list)
+    #            optionally pass a list of filepaths instead of a single dbpath
+
     def __init__(self, *, dbconn, dbpath=None, dbpaths=[], **kwargs):
+        assert isinstance(
+            dbconn,
+            (SQLiteDBConn, PostgresDBConn)), 'Invalid database connection'
+        '''
         if isinstance(dbconn, SQLiteDBConn):
             if dbpaths == [] and dbpath is None:
                 raise ValueError(
@@ -92,14 +95,17 @@ class DBQuery(UserDict):
                 )
         else:
             raise ValueError("Invalid database connection")
+        '''
 
-        for dbpath in dbpaths:
-            dbconn._attach(dbpath)
+        #for dbpath in dbpaths:
+        #    dbconn._attach(dbpath)
+        '''
         if isinstance(dbconn, ConnectionType):
             raise ValueError('Invalid database connection.'
                              f' Got: {dbconn}.'
                              f'Requires: {ConnectionType.SQLITE.value}'
                              f' or {ConnectionType.POSTGRES.value}')
+        '''
 
         self.data = kwargs
         self.dbconn = dbconn
@@ -116,21 +122,19 @@ class DBQuery(UserDict):
                              cur: sqlite3.Cursor,
                              month: str,
                              rng_string: str,
-                             dbname: str,
                              reaggregate_static: bool = False,
                              verbose: bool = False):
         # check if static tables exist
         cur.execute(
-            f'SELECT * FROM {dbname}.sqlite_master '
+            'SELECT * FROM sqlite_master '
             'WHERE type="table" AND name=?', [f'ais_{month}_static'])
         if len(cur.fetchall()) == 0:
-            #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
+            #sqlite_createtable_staticreport(self.dbconn, month)
             warnings.warn('No static data for selected time range! '
-                          f'{dbname} '
                           f'{rng_string}')
 
         # check if aggregate tables exist
-        cur.execute((f'SELECT * FROM {dbname}.sqlite_master '
+        cur.execute(('SELECT * FROM sqlite_master '
                      'WHERE type="table" and name=?'),
                     [f'static_{month}_aggregate'])
         res = cur.fetchall()
@@ -143,14 +147,13 @@ class DBQuery(UserDict):
 
         # check if dynamic tables exist
         cur.execute(
-            f'SELECT * FROM {dbname}.sqlite_master WHERE '
+            'SELECT * FROM sqlite_master WHERE '
             'type="table" and name=?', [f'ais_{month}_dynamic'])
         if len(cur.fetchall()) == 0:
-            if isinstance(self.dbconn, ConnectionType.SQLITE.value):
-                sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
+            if isinstance(self.dbconn, SQLiteDBConn):
+                sqlite_createtable_dynamicreport(self.dbconn, month)
 
             warnings.warn('No data for selected time range! '
-                          f'{dbname} '
                           f'{rng_string}')
 
     def _build_tables_postgres(self,
@@ -163,7 +166,7 @@ class DBQuery(UserDict):
         cur.execute('SELECT table_name FROM information_schema.tables '
                     f'WHERE table_name = \'ais_{month}_static\'')
         if len(cur.fetchall()) == 0:
-            #sqlite_createtable_staticreport(self.dbconn, month, dbpath)
+            #sqlite_createtable_staticreport(self.dbconn, month)
             warnings.warn('No static data for selected time range! '
                           f'{rng_string}')
 
@@ -184,20 +187,14 @@ class DBQuery(UserDict):
 
         if len(cur.fetchall()) == 0:  # pragma: no cover
             #if isinstance(self.dbconn, ConnectionType.SQLITE.value):
-            #    sqlite_createtable_dynamicreport(self.dbconn, month, dbpath)
+            #    sqlite_createtable_dynamicreport(self.dbconn, month)
             warnings.warn('No data for selected time range! '
                           f'{rng_string}')
 
-    def check_marinetraffic(self,
-                            dbpath,
-                            trafficDBpath,
-                            boundary,
-                            retry_404=False):
+    def check_marinetraffic(self, trafficDBpath, boundary, retry_404=False):
         ''' scrape metadata for vessels in domain from marinetraffic
 
             args:
-                dbpath (string)
-                    database file path
                 trafficDBpath (string)
                     marinetraffic database path
                 boundary (dict)
@@ -206,33 +203,20 @@ class DBQuery(UserDict):
                     if using :class:`aisdb.gis.Domain`, the `Domain.boundary`
                     attribute can be supplied here
         '''
-        self.dbconn._attach(dbpath)
         vinfo = VesselInfo(trafficDBpath)
-        # TODO: determine which attached db to query
 
-        print(f'retrieving vessel info for {dbpath}', end='', flush=True)
+        print('retrieving vessel info ', end='', flush=True)
         for month in self.data['months']:
-            dbname = self.dbconn._get_dbname(dbpath)
-            self.dbconn._attach(dbpath)
-
-            # skip missing tables
-            if self.dbconn.execute(
-                (f'SELECT * FROM {dbname}.sqlite_master '
-                 'WHERE type="table" and name=?'),
-                [f'ais_{month}_dynamic']).fetchall() == 0:  # pragma: no cover
-                continue
-
             # check unique mmsis
             sql = (
                 'SELECT DISTINCT(mmsi) '
-                f'FROM {dbname}.ais_{month}_dynamic AS d WHERE '
+                f'FROM ais_{month}_dynamic AS d WHERE '
                 f'{sqlfcn_callbacks.in_validmmsi_bbox(alias="d", **boundary)}')
             mmsis = self.dbconn.execute(sql).fetchall()
             print('.', end='', flush=True)  # first dot
 
             # retrieve vessel metadata
-            if len(mmsis) > 0:  # pragma: no cover
-                # not covered due to caching used for testing
+            if len(mmsis) > 0:
                 vinfo.vessel_info_callback(mmsis=np.array(mmsis),
                                            retry_404=retry_404,
                                            infotxt=f'{month} ')
@@ -241,20 +225,19 @@ class DBQuery(UserDict):
                 fcn=sqlfcn.crawl_dynamic,
                 reaggregate_static=False,
                 verbose=False):
-        ''' queries the database using the supplied SQL function and dbpath.
-            generator only stores one item at at time before yielding
+        ''' queries the database using the supplied SQL function.
 
             args:
                 self (UserDict)
-                    dictionary containing kwargs
-                dbpath (string)
-                    database location. defaults to the path configured
-                    in ~/.config/ais.cfg
+                    Dictionary containing keyword arguments
                 fcn (function)
-                    callback function that will generate SQL code using
+                    Callback function that will generate SQL code using
                     the args stored in self
+                reaggregate_static (bool)
+                    If True, the metadata aggregate tables will be regenerated
+                    from
                 verbose (bool)
-                    log info to stdout
+                    Log info to stdout
 
             yields:
                 numpy array of rows for each unique MMSI
@@ -265,61 +248,47 @@ class DBQuery(UserDict):
         # initialize dbconn, run query
         assert 'dbpath' not in self.data.keys()
         cur = self.dbconn.cursor()
+        db_rng = self.dbconn.db_daterange
 
-        if isinstance(self.dbconn, PostgresDBConn):
-            iter_names = ['main']
-        elif isinstance(self.dbconn, SQLiteDBConn):
-            iter_names = [f for f in self.dbconn.dbpaths]
-        else:
-            assert False
+        if not self.dbconn.db_daterange:
+            if verbose:
+                print('skipping query (empty database)...')
+            return
+        elif self['start'].date() > db_rng['end']:
+            if verbose:
+                print('skipping query (out of timerange)...')
+            return
+        elif self['end'].date() < db_rng['start']:
+            if verbose:
+                print('skipping query (out of timerange)...')
+            return
 
-        #for dbpath in self.dbconn.dbpaths:
-        for dbpath in iter_names:
+        assert isinstance(db_rng['start'], date)
+        assert isinstance(db_rng['end'], date)
 
-            if isinstance(self.dbconn, PostgresDBConn):
-                db_rng = self.dbconn.db_daterange
+        for month in self.data['months']:
 
-            elif isinstance(self.dbconn, SQLiteDBConn):
-                dbname = self.dbconn._get_dbname(dbpath)
-                self.dbconn._set_db_daterange(dbname)
-                if dbname not in self.dbconn.db_daterange:
-                    continue
-                #self.dbconn._attach(dbpath)
-                db_rng = self.dbconn.db_daterange[dbname]
+            month_date = datetime(int(month[:4]), int(month[4:]), 1)
+            qry_start = self["start"] - timedelta(days=self["start"].day)
+
+            if not (qry_start <= month_date <= self['end']):
+                raise ValueError(f'{month_date} not in data range '
+                                 f'({qry_start}->{self["end"]})')
+
+            rng_string = f'{db_rng["start"].year}-{db_rng["start"].month:02d}-{db_rng["start"].day:02d}'
+            rng_string += ' -> '
+            rng_string += f'{db_rng["end"].year}-{db_rng["end"].month:02d}-{db_rng["end"].day:02d}'
+
+            if isinstance(self.dbconn, SQLiteDBConn):
+                self._build_tables_sqlite(cur, month, rng_string,
+                                          reaggregate_static, verbose)
+            elif isinstance(self.dbconn, PostgresDBConn):
+                self._build_tables_postgres(cur, month, rng_string,
+                                            reaggregate_static, verbose)
             else:
                 assert False
 
-            assert isinstance(db_rng['start'], date)
-            assert isinstance(db_rng['end'], date)
-
-            if (self['start'].date() > db_rng['end']
-                    or self['end'].date() < db_rng['start']):
-                if verbose:
-                    print(f'skipping query for {dbpath} (out of timerange)...')
-                continue
-
-            for month in self.data['months']:
-
-                month_date = datetime(int(month[:4]), int(month[4:]), 1)
-                qry_start = self["start"] - timedelta(days=self["start"].day)
-                assert qry_start <= month_date <= self[
-                    'end'], f'{month_date} not in range ({qry_start}->{self["end"]})'
-
-                rng_string = f'{db_rng["start"].year}-{db_rng["start"].month:02d}-{db_rng["start"].day:02d}'
-                rng_string += ' -> '
-                rng_string += f'{db_rng["end"].year}-{db_rng["end"].month:02d}-{db_rng["end"].day:02d}'
-
-                if isinstance(self.dbconn, SQLiteDBConn):
-                    self._build_tables_sqlite(cur, month, rng_string,
-                                              self.dbconn._get_dbname(dbpath),
-                                              reaggregate_static, verbose)
-                elif isinstance(self.dbconn, PostgresDBConn):
-                    self._build_tables_postgres(cur, month, rng_string,
-                                                reaggregate_static, verbose)
-                else:
-                    assert False
-
-            qry = fcn(dbpath=dbpath, **self.data)
+            qry = fcn(**self.data)
             if verbose:
                 print(qry)
 

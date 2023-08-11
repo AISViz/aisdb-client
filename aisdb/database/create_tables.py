@@ -18,25 +18,20 @@ with open(os.path.join(sqlpath, 'createtable_static_aggregate.sql'), 'r') as f:
     sql_aggregate = f.read()
 
 
-def sqlite_createtable_dynamicreport(dbconn, month, dbpath):
+def sqlite_createtable_dynamicreport(dbconn, month):
     assert isinstance(dbconn,
                       (DBConn)), f'not an SQLiteDBConn object: {dbconn}'
-    dbconn._attach(dbpath)
-    dbconn.execute(
-        sql_createtable_dynamic.format(month).replace(
-            f'ais_{month}', f'{dbconn._get_dbname(dbpath)}.ais_{month}'))
+    dbconn.execute(sql_createtable_dynamic.format(month))
 
 
-def sqlite_createtable_staticreport(dbconn, month, dbpath):
+def sqlite_createtable_staticreport(dbconn, month):
     assert isinstance(dbconn, (DBConn)), f'not an SQLiteDBConn object {dbconn}'
-    dbconn._attach(dbpath)
-    sql = sql_createtable_static.format(month).replace(
-        f'ais_{month}', f'{dbconn._get_dbname(dbpath)}.ais_{month}')
+    sql = sql_createtable_static.format(month)
     dbconn.execute(sql)
 
 
 def aggregate_static_msgs_sqlite(dbconn: SQLiteDBConn,
-                                 months_str: bool,
+                                 months_str: list,
                                  verbose: bool = True):
     ''' collect an aggregate of static vessel reports for each unique MMSI
         identifier. The most frequently repeated values for each MMSI will
@@ -47,8 +42,8 @@ def aggregate_static_msgs_sqlite(dbconn: SQLiteDBConn,
         args:
             dbconn (:class:`aisdb.database.dbconn.SQLiteDBConn`)
                 database connection object
-            months_str (array)
-                array of strings with format: YYYYmm
+            months_str (list)
+                list of strings with format: YYYYmm
             verbose (bool)
                 logs messages to stdout
     '''
@@ -57,94 +52,86 @@ def aggregate_static_msgs_sqlite(dbconn: SQLiteDBConn,
         raise ValueError(
             'db argument must be an SQLiteDBConn database connection')
 
-    assert not hasattr(dbconn, 'dbpath')
-    assert hasattr(dbconn, 'dbpaths')
-    assert 'main' not in dbconn.dbpaths
+    assert hasattr(dbconn, 'dbpath')
+    assert not hasattr(dbconn, 'dbpaths')
 
-    for dbpath in dbconn.dbpaths:
-        dbname = dbconn._get_dbname(dbpath)
-        assert dbname != 'main'
-        cur = dbconn.cursor()
+    cur = dbconn.cursor()
 
-        for month in months_str:
-            # check for monthly tables in dbfiles containing static reports
-            cur.execute(
-                f'SELECT name FROM {dbname}.sqlite_master '
-                'WHERE type="table" AND name=?', [f'ais_{month}_static'])
-            if cur.fetchall() == []:
-                continue
+    for month in months_str:
+        # check for monthly tables in dbfiles containing static reports
+        cur.execute(
+            'SELECT name FROM sqlite_master '
+            'WHERE type="table" AND name=?', [f'ais_{month}_static'])
+        if cur.fetchall() == []:
+            continue
 
-            sqlite_createtable_staticreport(dbconn, month, dbpath)
-            if verbose:
-                print('aggregating static reports into '
-                      f'{dbname}.static_{month}_aggregate...')
-            cur.execute('SELECT DISTINCT s.mmsi FROM '
-                        f'{dbname}.ais_{month}_static AS s')
-            mmsis = np.array(cur.fetchall(), dtype=int).flatten()
+        sqlite_createtable_staticreport(dbconn=dbconn, month=month)
+        if verbose:
+            print('aggregating static reports into '
+                  f'static_{month}_aggregate...')
+        cur.execute('SELECT DISTINCT s.mmsi FROM '
+                    f'ais_{month}_static AS s')
+        mmsis = np.array(cur.fetchall(), dtype=int).flatten()
 
-            cur.execute('DROP TABLE IF EXISTS '
-                        f'{dbname}.static_{month}_aggregate')
+        cur.execute('DROP TABLE IF EXISTS '
+                    f'static_{month}_aggregate')
 
-            #with open(os.path.join(sqlpath, 'select_columns_static.sql'), 'r') as f:
-            #    sql_select = f.read().format(month).replace( 'FROM ', f'FROM {dbname}.')
+        sql_select = '''
+          SELECT
+            s.mmsi, s.imo, TRIM(vessel_name) as vessel_name, s.ship_type,
+            s.call_sign, s.dim_bow, s.dim_stern, s.dim_port, s.dim_star,
+            s.draught
+          FROM ais_{}_static AS s WHERE s.mmsi = ?
+        '''.format(month)
 
-            sql_select = '''
-              SELECT
-                s.mmsi, s.imo, TRIM(vessel_name) as vessel_name, s.ship_type,
-                s.call_sign, s.dim_bow, s.dim_stern, s.dim_port, s.dim_star,
-                s.draught
-              FROM ais_{}_static AS s WHERE s.mmsi = ?
-            '''.format(month).replace('FROM ', f'FROM {dbname}.')
+        agg_rows = []
+        for mmsi in mmsis:
+            _ = cur.execute(sql_select, (str(mmsi), ))
+            cols = np.array(cur.fetchall(), dtype=object).T
+            assert len(cols) > 0
 
-            agg_rows = []
-            for mmsi in mmsis:
-                _ = cur.execute(sql_select, (str(mmsi), ))
-                cols = np.array(cur.fetchall(), dtype=object).T
-                assert len(cols) > 0
+            filtercols = np.array(
+                [
+                    np.array(list(filter(None, col)), dtype=object)
+                    for col in cols
+                ],
+                dtype=object,
+            )
 
-                filtercols = np.array(
-                    [
-                        np.array(list(filter(None, col)), dtype=object)
-                        for col in cols
-                    ],
-                    dtype=object,
-                )
+            paddedcols = np.array(
+                [col if len(col) > 0 else [None] for col in filtercols],
+                dtype=object,
+            )
 
-                paddedcols = np.array(
-                    [col if len(col) > 0 else [None] for col in filtercols],
-                    dtype=object,
-                )
+            aggregated = [
+                Counter(col).most_common(1)[0][0] for col in paddedcols
+            ]
 
-                aggregated = [
-                    Counter(col).most_common(1)[0][0] for col in paddedcols
-                ]
+            agg_rows.append(aggregated)
 
-                agg_rows.append(aggregated)
+        cur.execute(
+            sql_aggregate.format(month).replace(f'static_{month}_aggregate',
+                                                f'static_{month}_aggregate'))
 
-            cur.execute(
-                sql_aggregate.format(month).replace(
-                    f'static_{month}_aggregate',
-                    f'{dbname}.static_{month}_aggregate'))
+        if len(agg_rows) == 0:  # pragma: no cover
+            warnings.warn('no rows to aggregate! '
+                          f'table: static_{month}_aggregate')
+            continue
 
-            if len(agg_rows) == 0:  # pragma: no cover
-                warnings.warn('no rows to aggregate! '
-                              f'table: {dbname}.static_{month}_aggregate')
-                continue
+        skip_nommsi = np.array(agg_rows, dtype=object)
+        assert len(skip_nommsi.shape) == 2
+        skip_nommsi = skip_nommsi[skip_nommsi[:, 0] != None]
+        assert len(skip_nommsi) > 1
+        cur.executemany((
+            f'INSERT INTO static_{month}_aggregate '
+            f"VALUES ({','.join(['?' for _ in range(skip_nommsi.shape[1])])}) "
+        ), skip_nommsi)
 
-            skip_nommsi = np.array(agg_rows, dtype=object)
-            assert len(skip_nommsi.shape) == 2
-            skip_nommsi = skip_nommsi[skip_nommsi[:, 0] != None]
-            assert len(skip_nommsi) > 1
-            cur.executemany((
-                f'INSERT INTO {dbname}.static_{month}_aggregate '
-                f"VALUES ({','.join(['?' for _ in range(skip_nommsi.shape[1])])}) "
-            ), skip_nommsi)
-
-            dbconn.commit()
+        dbconn.commit()
 
 
 def aggregate_static_msgs_postgres(dbconn: PostgresDBConn,
-                                   months_str: str,
+                                   months_str: list,
                                    verbose: bool = True):
     ''' collect an aggregate of static vessel reports for each unique MMSI
         identifier. The most frequently repeated values for each MMSI will
@@ -155,8 +142,8 @@ def aggregate_static_msgs_postgres(dbconn: PostgresDBConn,
         args:
             dbconn (:class:`aisdb.database.dbconn.DBConn`)
                 database connection object
-            months_str (array)
-                array of strings with format: YYYYmm
+            months_str (list)
+                list of strings with format: YYYYmm
             verbose (bool)
                 logs messages to stdout
     '''
@@ -170,25 +157,27 @@ def aggregate_static_msgs_postgres(dbconn: PostgresDBConn,
     for month in months_str:
         # check for monthly tables in dbfiles containing static reports
         cur.execute('SELECT table_name FROM information_schema.tables '
-                    'WHERE table_name = \'ais_{month}_static\'')
-        if cur.fetchall() == []:
+                    f'WHERE table_name = \'ais_{month}_static\'')
+        static_tables = cur.fetchall()
+        if static_tables == []:
             continue
 
         #sqlite_createtable_staticreport(dbconn, month, dbpath)
         if verbose:
             print('aggregating static reports into '
                   f'static_{month}_aggregate...')
-        cur.execute(f'SELECT DISTINCT s.mmsi FROM ais_{month}_static')
+        cur.execute(f'SELECT DISTINCT s.mmsi FROM ais_{month}_static AS s')
         mmsis = np.array(cur.fetchall(), dtype=int).flatten()
 
         cur.execute(f'DROP TABLE IF EXISTS static_{month}_aggregate')
 
+        formatter = '?' if isinstance(dbconn, SQLiteDBConn) else '%s'
         sql_select = f'''
           SELECT
             s.mmsi, s.imo, TRIM(vessel_name) as vessel_name, s.ship_type,
             s.call_sign, s.dim_bow, s.dim_stern, s.dim_port, s.dim_star,
             s.draught
-          FROM ais_{month}_static AS s WHERE s.mmsi = ?
+          FROM ais_{month}_static AS s WHERE s.mmsi = {formatter}
         '''
 
         agg_rows = []
@@ -227,9 +216,10 @@ def aggregate_static_msgs_postgres(dbconn: PostgresDBConn,
         assert len(skip_nommsi.shape) == 2
         skip_nommsi = skip_nommsi[skip_nommsi[:, 0] != None]
         assert len(skip_nommsi) > 1
-        cur.executemany((
+        insert_stmt = (
             f'INSERT INTO static_{month}_aggregate '
-            f"VALUES ({','.join(['?' for _ in range(skip_nommsi.shape[1])])}) "
-        ), skip_nommsi)
+            f"VALUES ({','.join([formatter for _ in range(skip_nommsi.shape[1])])}) "
+        )
+        cur.executemany(insert_stmt, map(tuple, skip_nommsi))
 
         dbconn.commit()

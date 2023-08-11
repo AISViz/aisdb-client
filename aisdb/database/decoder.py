@@ -4,19 +4,16 @@
 
 from hashlib import md5
 from functools import partial
-from multiprocessing import Pool
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import timedelta
 import gzip
 import os
 import pickle
-import sqlite3
 import tempfile
 import zipfile
-import warnings
 
-import psycopg
 from dateutil.rrule import rrule, MONTHLY
+import psycopg
 
 from aisdb.aisdb import decoder
 from aisdb.database.create_tables import (
@@ -32,8 +29,6 @@ class FileChecksums():
 
     def __init__(self, *, dbconn):
         assert isinstance(dbconn, (PostgresDBConn, SQLiteDBConn))
-        if isinstance(dbconn, SQLiteDBConn):
-            assert len(dbconn.dbpaths) == 1, f'{dbconn.dbpaths}'
         self.dbconn = dbconn
         self.checksums_table()
         if not os.path.isdir(
@@ -55,66 +50,48 @@ class FileChecksums():
             e.g.
                 self.dbconn.close()
         '''
-        # self.dbconn = sqlite3.connect(self.dbpath)
+        cur = self.dbconn.cursor()
         if isinstance(self.dbconn, SQLiteDBConn):
-            dbconn = sqlite3.connect(self.dbconn.dbpaths[0])
-            cur = dbconn.cursor()
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS
                 hashmap(
                     hash INTEGER PRIMARY KEY,
                     bytes BLOB
                 )
-                WITHOUT ROWID;''')
-            cur.execute('CREATE UNIQUE INDEX '
-                        'IF NOT EXISTS '
-                        'idx_map on hashmap(hash)')
-            dbconn.close()
+                ''')
         elif isinstance(self.dbconn, PostgresDBConn):
-            dbconn = self.dbconn
-            cur = self.dbconn.cursor()
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS
                 hashmap(
                     hash TEXT PRIMARY KEY,
                     bytes BYTEA
                 );''')
-            cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS '
-                        'idx_map on hashmap(hash);')
+
+        cur.execute('CREATE UNIQUE INDEX '
+                    'IF NOT EXISTS '
+                    'idx_map on hashmap(hash)')
+        self.dbconn.commit()
 
     def insert_checksum(self, checksum):
         if isinstance(self.dbconn, SQLiteDBConn):
-            dbconn = sqlite3.connect(self.dbconn.dbpaths[0])
-            dbconn.execute('INSERT INTO hashmap VALUES (?,?)',
-                           [checksum, pickle.dumps(None)])
+            self.dbconn.execute('INSERT INTO hashmap VALUES (?,?)',
+                                [checksum, pickle.dumps(None)])
         elif isinstance(self.dbconn, PostgresDBConn):
-            dbconn = self.dbconn
-            dbconn.execute(
+            self.dbconn.execute(
                 'INSERT INTO hashmap VALUES ($1,$2) ON CONFLICT DO NOTHING',
                 [checksum, pickle.dumps(None)])
-        dbconn.commit()
-        if isinstance(self.dbconn, SQLiteDBConn):
-            dbconn.close()
 
     def checksum_exists(self, checksum):
-        # dbconn = sqlite3.connect(self.dbpath)
-        # cur = dbconn.cursor()
+        cur = self.dbconn.cursor()
         if isinstance(self.dbconn, SQLiteDBConn):
-            dbconn = sqlite3.connect(self.dbconn.dbpaths[0])
-            cur = dbconn.cursor()
             cur.execute('SELECT * FROM hashmap WHERE hash = ?', [checksum])
         elif isinstance(self.dbconn, PostgresDBConn):
-            dbconn = self.dbconn
-            cur = self.dbconn.cursor()
             cur.execute('SELECT * FROM hashmap WHERE hash = %s', [checksum])
         res = cur.fetchone()
-        dbconn.commit()
-        # dbconn.close()
-        if isinstance(self.dbconn, SQLiteDBConn):
-            dbconn.close()
 
         if res is None or res is False:
             return False
+
         return True
 
     def get_md5(self, path, f):
@@ -165,7 +142,6 @@ def fast_unzip(zipfilenames, dirname, processes=12):
 def decode_msgs(filepaths,
                 dbconn,
                 source,
-                dbpath=None,
                 vacuum=False,
                 skip_checksum=False,
                 verbose=True):
@@ -184,9 +160,6 @@ def decode_msgs(filepaths,
                 ingested into the database
             dbconn (:class:`aisdb.database.dbconn.DBConn`)
                 database connection object
-            dbpath (string)
-                SQLite database filepath to store results in. If dbconn is a
-                Postgres database connection, set this to ``None``.
             source (string)
                 data source name or description. will be used as a primary key
                 column, so duplicate messages from different sources will not
@@ -206,14 +179,14 @@ def decode_msgs(filepaths,
 
         >>> import os
         >>> from aisdb import decode_msgs, DBConn
-
-        >>> dbpath = 'test_decode_msgs.db'
         >>> filepaths = ['aisdb/tests/testdata/test_data_20210701.csv',
         ...              'aisdb/tests/testdata/test_data_20211101.nm4']
-        >>> with DBConn() as dbconn:
-        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, dbpath=dbpath,
+        >>> with SQLiteDBConn('test_decode_msgs.db') as dbconn:
+        ...     decode_msgs(filepaths=filepaths, dbconn=dbconn,
         ...                 source='TESTING', verbose=False)
-        >>> os.remove(dbpath)
+    '''
+    '''
+        >>> os.remove('test_decode_msgs.db')
     '''
     #        psql_conn_string (string)
     #            Postgres connection string. If dbconn is an SQLite database
@@ -226,18 +199,7 @@ def decode_msgs(filepaths,
     if len(filepaths) == 0:  # pragma: no cover
         raise ValueError('must supply atleast one filepath.')
 
-    if isinstance(dbconn, SQLiteDBConn):
-        assert dbpath
-        dbconn._attach(dbpath)
-        dbindex = FileChecksums(dbconn=dbconn)
-        psql_conn_string = ''
-    elif isinstance(dbconn, PostgresDBConn):
-        assert not dbpath
-        dbindex = FileChecksums(dbconn=dbconn)
-        dbpath = ''
-        psql_conn_string = dbconn.connection_string
-    else:
-        assert False
+    dbindex = FileChecksums(dbconn=dbconn)
 
     # handle zipfiles
     zipped = {
@@ -249,6 +211,7 @@ def decode_msgs(filepaths,
     zipped_checksums = []
     not_zipped_checksums = []
     unzipped_checksums = []
+    _skipped = []
 
     if verbose:
         print('generating file checksums...')
@@ -259,6 +222,7 @@ def decode_msgs(filepaths,
         if skip_checksum:
             continue
         if dbindex.checksum_exists(signature):
+            _skipped.append(item)
             zipped.remove(item)
             if verbose:
                 print(f'found matching checksum, skipping {item}')
@@ -271,6 +235,7 @@ def decode_msgs(filepaths,
         if skip_checksum:
             continue
         if dbindex.checksum_exists(signature):
+            _skipped.append(item)
             not_zipped.remove(item)
             if verbose:
                 print(f'found matching checksum, skipping {item}')
@@ -293,6 +258,7 @@ def decode_msgs(filepaths,
         unzipped = []
 
     raw_files = not_zipped + unzipped
+    raw_files
 
     if not raw_files:
         print('All files returned an existing checksum.',
@@ -309,7 +275,7 @@ def decode_msgs(filepaths,
     # TODO: get file dates and create new tables before insert
     if verbose:
         print('checking file dates...')
-    filedates = [getfiledate(f) for f in not_zipped + unzipped]
+    filedates = [getfiledate(f) for f in raw_files]
     months = [
         month.strftime('%Y%m') for month in rrule(
             freq=MONTHLY,
@@ -340,20 +306,25 @@ def decode_msgs(filepaths,
                 dbconn.execute(
                     f'DROP INDEX IF EXISTS idx_ais_{month}_dynamic_{idx_name}')
         dbconn.commit()
+        completed_files = decoder(dbpath='',
+                                  psql_conn_string=dbconn.connection_string,
+                                  files=raw_files,
+                                  source=source,
+                                  verbose=verbose)
+
     elif isinstance(dbconn, SQLiteDBConn):
         with open(os.path.join(sqlpath, 'createtable_dynamic_clustered.sql'),
                   'r') as f:
             create_table_stmt = f.read()
         for month in months:
             dbconn.execute(create_table_stmt.format(month))
+        completed_files = decoder(dbpath=dbconn.dbpath,
+                                  psql_conn_string='',
+                                  files=raw_files,
+                                  source=source,
+                                  verbose=verbose)
     else:
         assert False
-
-    completed_files = decoder(dbpath=dbpath,
-                              psql_conn_string=psql_conn_string,
-                              files=raw_files,
-                              source=source,
-                              verbose=verbose)
 
     if verbose and not skip_checksum:
         print('saving checksums...')
@@ -365,6 +336,8 @@ def decode_msgs(filepaths,
         else:
             if verbose:
                 print(f'error processing {filename}, skipping checksum...')
+
+    dbindex.dbconn.commit()
 
     if verbose:
         print('cleaning temporary data...')
@@ -381,25 +354,7 @@ def decode_msgs(filepaths,
         dbconn.execute('ANALYZE')
         dbconn.commit()
 
-    ###
-
-    #dbindex.dbconn.close()
-
-    ###
-    if isinstance(dbconn, SQLiteDBConn):
-        #dbconn._set_db_daterange(dbconn._get_dbname(dbpath))
-        dbconn._attach(dbpath)
-        date_range = dbconn.db_daterange[dbconn._get_dbname(dbpath)]
-    elif isinstance(dbconn, PostgresDBConn):
-        dbconn._set_db_daterange()
-        date_range = dbconn.db_daterange
-    else:
-        assert False
-
-    months = [
-        month.strftime('%Y%m') for month in rrule(
-            MONTHLY, dtstart=date_range['start'], until=date_range['end'])
-    ]
+    # reaggreate_months = np.unique( [month.strftime('%Y%m') for month in filedates])
 
     if isinstance(dbconn, SQLiteDBConn):
         aggregate_static_msgs_sqlite(dbconn, months, verbose)

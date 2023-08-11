@@ -8,26 +8,23 @@ from datetime import datetime
 from enum import Enum
 import os
 import re
-import warnings
 import ipaddress
 
 from aisdb import sqlite3, sqlpath
 
 import psycopg
 
+with open(os.path.join(sqlpath, 'coarsetype.sql'), 'r') as f:
+    coarsetype_sql = f.read().split(';')
+
 
 class _DBConn():
     ''' AISDB Database connection handler '''
-
-    #def __enter__(self):
-    #    return self
 
     def _create_table_coarsetype(self):
         ''' create a table to describe integer vessel type as a human-readable
             string.
         '''
-        with open(os.path.join(sqlpath, 'coarsetype.sql'), 'r') as f:
-            coarsetype_sql = f.read().split(';')
         #cur = self.cursor()
         for stmt in coarsetype_sql:
             if stmt == '\n':
@@ -42,104 +39,53 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
     ''' SQLite3 database connection object
 
         attributes:
-            dbpaths (list of strings)
-                list of currently attached databases
+            dbpath (str)
+                database filepath
             db_daterange (dict)
                 temporal range of monthly database tables. keys are DB file
                 names
     '''
 
-    def _set_db_daterange(self, dbname):
+    def __init__(self, dbpath):
+        super().__init__(
+            dbpath,
+            timeout=5,
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+        )
+        self.dbpath = dbpath
+        self.row_factory = sqlite3.Row
+        coarsetype_exists_qry = (
+            'SELECT * FROM sqlite_master '
+            r'WHERE type="table" AND name LIKE "coarsetype_ref" ')
+        cur = self.cursor()
+        cur.execute(coarsetype_exists_qry)
+        if len(cur.fetchall()) == 0:
+            self._create_table_coarsetype()
+        self._set_db_daterange()
+
+    def _set_db_daterange(self):
         # query the temporal range of monthly database tables
         # results will be stored as a dictionary attribute db_daterange
-        if not hasattr(self, 'db_daterange'):
+        sql_qry = ('SELECT * FROM sqlite_master '
+                   r'WHERE type="table" AND name LIKE "ais_%_dynamic" ')
+        cur = self.cursor()
+        cur.execute(sql_qry)
+        dynamic_tables = cur.fetchall()
+        if dynamic_tables != []:
+            db_months = sorted(
+                [table['name'].split('_')[1] for table in dynamic_tables])
+            self.db_daterange = {
+                'start':
+                datetime(int(db_months[0][:4]), int(db_months[0][4:]),
+                         1).date(),
+                'end':
+                datetime((y := int(db_months[-1][:4])),
+                         (m := int(db_months[-1][4:])),
+                         monthrange(y, m)[1]).date(),
+            }
+        else:
             self.db_daterange = {}
-        self.db_daterange[dbname] = {}
-        sql_qry = (f'SELECT * FROM {dbname}.sqlite_master '
-                r'WHERE type="table" AND name LIKE "ais_%_dynamic" ')
-        try:
-            cur = self.cursor()
-            cur.execute(sql_qry)
-            dynamic_tables = cur.fetchall()
-            if dynamic_tables != []:
-                db_months = sorted(
-                        [table['name'].split('_')[1] for table in dynamic_tables])
-                self.db_daterange[dbname] = {
-                        'start':
-                        datetime(int(db_months[0][:4]), int(db_months[0][4:]),
-                            1).date(),
-                        'end':
-                        datetime((y := int(db_months[-1][:4])),
-                            (m := int(db_months[-1][4:])),
-                            monthrange(y, m)[1]).date(),
-                        }
-        except Exception as err:
-            warnings.warn(str(err.with_traceback(None)))
-        finally:
-            cur.close()
-
-    def __init__(self):
-        # configs
-        self.dbpaths = []
-        super().__init__(':memory:',
-                timeout=5,
-                detect_types=sqlite3.PARSE_DECLTYPES
-                | sqlite3.PARSE_COLNAMES)
-        self.row_factory = sqlite3.Row
-        self._create_table_coarsetype()
-
-    '''
-    def __exit__(self, exc_class, exc, tb):
-        #cur = self.cursor()
-        try:
-            for dbpath in self.dbpaths:
-                self.execute('DETACH DATABASE ?', [self._get_dbname(dbpath)])
-            #cur.close()
-        except Exception as err:
-            print('rolling back...')
-            self.rollback()
-            raise err
-        finally:
-            self.close()
-        self = None
-    '''
-
-    def _get_dbname(self, dbpath):
-        name_ext = os.path.split(dbpath)[1]
-        name = name_ext.split('.')[0]
-        return name
-
-    def _attach(self, dbpath):
-        ''' connect to an additional database file '''
-        assert dbpath is not None
-        dbname = self._get_dbname(dbpath)
-
-        assert dbname is not None
-        assert dbname != 'main'
-        assert dbname != 'temp'
-        assert dbname != ''
-
-        if dbpath not in self.dbpaths:
-            if os.environ.get('DEBUG'):
-                print('attaching database:', dbpath, dbname)
-            try:
-                self.execute('ATTACH ? AS ?', [dbpath, dbname])
-            except Exception as e:
-                print(f'failed: ATTACH {dbpath} AS {dbname}')
-                raise e
-            self.dbpaths.append(dbpath)
-        #cur.close()
-
-        # check if the database contains marinetraffic data
-        sql_qry_traffictable = (
-                f'SELECT * FROM {dbname}.sqlite_master '
-                'WHERE type="table" AND name = "webdata_marinetraffic"')
-        cur = self.execute(sql_qry_traffictable)
-        if len(cur.fetchall()) > 0:
-            self.trafficdb = dbpath
         cur.close()
-
-        self._set_db_daterange(dbname=dbname)
 
 
 # default to local SQLite database
@@ -147,14 +93,15 @@ DBConn = SQLiteDBConn
 
 
 class PostgresDBConn(_DBConn, psycopg.Connection):
-    ''' This feature requires the optional dependency psycopg for interfacing Postgres
-        databases.
+    ''' This feature requires optional dependency psycopg for interfacing
+        Postgres databases.
 
         The following keyword arguments are accepted by Postgres:
         | https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
         Alternatively, a connection string may be used.
-        Information on connection strings and postgres URI format can be found here:
+        Information on connection strings and postgres URI format can be found
+        here:
         | https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
 
         Example:
@@ -176,31 +123,31 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             dbconn = PostgresDBConn('Postgresql://localhost:5433')
 
     '''
+
     def _set_db_daterange(self):
 
         dynamic_tables_qry = (
-                "select table_name from information_schema.tables "
-                r"where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name"
-                )
+            "select table_name from information_schema.tables "
+            r"where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name"
+        )
         cur = self.cursor()
         cur.execute(dynamic_tables_qry)
-        res = cur.fetchall()
+        dynamic_tables = cur.fetchall()
 
-        if not res:
-            self.db_daterange = {}
+        if dynamic_tables != []:
+            db_months = sorted(
+                [table[0].split('_')[1] for table in dynamic_tables])
+            self.db_daterange = {
+                'start':
+                datetime(int(db_months[0][:4]), int(db_months[0][4:]),
+                         1).date(),
+                'end':
+                datetime((y := int(db_months[-1][:4])),
+                         (m := int(db_months[-1][4:])),
+                         monthrange(y, m)[1]).date(),
+            }
         else:
-            first = res[0][0]
-            last = res[-1][0]
-
-            min_qry = f'SELECT MIN(time) FROM {first}'
-            cur.execute(min_qry)
-            min_time = datetime.utcfromtimestamp(cur.fetchone()[0]).date()
-
-            max_qry = f'SELECT MAX(time) FROM {last}'
-            cur.execute(max_qry)
-            max_time = datetime.utcfromtimestamp(cur.fetchone()[0]).date()
-
-            self.db_daterange = {'start': min_time, 'end': max_time}
+            self.db_daterange = {}
 
     def __enter__(self):
         self.conn.__enter__()
@@ -273,7 +220,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         cur = self.cursor()
 
         coarsetype_qry = ("select table_name from information_schema.tables "
-                "where table_name = 'coarsetype_ref'")
+                          "where table_name = 'coarsetype_ref'")
 
         cur.execute(coarsetype_qry)
         coarsetype_exists = cur.fetchone()
@@ -291,14 +238,14 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
     def rebuild_indexes(self, month, vacuum=False, verbose=True):
         dbconn = self.conn
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
-                f'ON ais_{month}_dynamic (mmsi)')
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
+            f'ON ais_{month}_dynamic (mmsi)')
         dbconn.commit()
         if verbose:
             print(f'done indexing mmsi: {month}')
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_time '
-                f'ON ais_{month}_dynamic (time)')
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_time '
+            f'ON ais_{month}_dynamic (time)')
         dbconn.commit()
         if verbose:
             print(f'done indexing time: {month}')
@@ -314,33 +261,33 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         #if verbose:
         #    print(f'done deduplicating: {month}')
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
-                f'ON ais_{month}_dynamic (longitude)')
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
+            f'ON ais_{month}_dynamic (longitude)')
         dbconn.commit()
         if verbose:
             print(f'done indexing longitude: {month}')
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lat '
-                f'ON ais_{month}_dynamic (latitude)')
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lat '
+            f'ON ais_{month}_dynamic (latitude)')
         dbconn.commit()
         if verbose:
             print(f'done indexing latitude: {month}')
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
-                f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude, source)'
-                )
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_cluster '
+            f'ON ais_{month}_dynamic (mmsi, time, longitude, latitude, source)'
+        )
         dbconn.commit()
         if verbose:
             print(f'done indexing combined index: {month}')
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_static_mmsi '
-                f'ON ais_{month}_static (mmsi)')
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_static_mmsi '
+            f'ON ais_{month}_static (mmsi)')
         dbconn.commit()
         if verbose:
             print(f'done indexing static mmsi: {month}')
         dbconn.execute(
-                f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_static_time '
-                f'ON ais_{month}_static (time)')
+            f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_static_time '
+            f'ON ais_{month}_static (time)')
         dbconn.commit()
         if verbose:
             print(f'done indexing static time: {month}')
@@ -349,8 +296,8 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             previous = dbconn.conn.autocommit
             dbconn.conn.autocommit = True
             dbconn.execute(
-                    f'VACUUM (analyze, index_cleanup, verbose, parallel 3) ais_{month}_dynamic'
-                    )
+                f'VACUUM (analyze, index_cleanup, verbose, parallel 3) ais_{month}_dynamic'
+            )
             dbconn.conn.autocommit = previous
 
     def deduplicate_dynamic_msgs(self, month: str, verbose=True):

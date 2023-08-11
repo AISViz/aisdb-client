@@ -16,19 +16,17 @@ def test_decode_1day(tmpdir):
                                   'test_data_20211101.nm4.gz')
     testingdata_zip = os.path.join(os.path.dirname(__file__), 'testdata',
                                    'test_data_20211101.nm4.zip')
-    with DBConn() as dbconn:
+    with DBConn(dbpath) as dbconn:
         filepaths = [
             testingdata_nm4, testingdata_csv, testingdata_gz, testingdata_zip
         ]
         dt = datetime.now()
         decode_msgs(filepaths=filepaths,
                     dbconn=dbconn,
-                    dbpath=dbpath,
                     source='TESTING',
                     vacuum=True)
         decode_msgs(filepaths=filepaths,
                     dbconn=dbconn,
-                    dbpath=dbpath,
                     source='TESTING',
                     vacuum=dbpath + '.vacuum')
         delta = datetime.now() - dt
