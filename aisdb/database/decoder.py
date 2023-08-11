@@ -385,7 +385,7 @@ def decode_msgs(filepaths,
                 previous = dbconn.conn.autocommit
                 dbconn.conn.autocommit = True
                 dbconn.execute(
-                    'VACUUM (verbose, index_cleanup, parallel 3, analyze)')
+                    'VACUUM (verbose, index_cleanup, analyze)')
                 dbconn.conn.autocommit = previous
             elif isinstance(vacuum, str):
                 raise ValueError(

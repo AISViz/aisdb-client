@@ -296,7 +296,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             previous = dbconn.conn.autocommit
             dbconn.conn.autocommit = True
             dbconn.execute(
-                f'VACUUM (analyze, index_cleanup, verbose, parallel 3) ais_{month}_dynamic'
+                f'VACUUM (analyze, index_cleanup, verbose) ais_{month}_dynamic'
             )
             dbconn.conn.autocommit = previous
 

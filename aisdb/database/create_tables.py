@@ -113,7 +113,7 @@ def aggregate_static_msgs_sqlite(dbconn: SQLiteDBConn,
             sql_aggregate.format(month).replace(f'static_{month}_aggregate',
                                                 f'static_{month}_aggregate'))
 
-        if len(agg_rows) == 0:  # pragma: no cover
+        if len(agg_rows) == 0:
             warnings.warn('no rows to aggregate! '
                           f'table: static_{month}_aggregate')
             continue
@@ -207,7 +207,7 @@ def aggregate_static_msgs_postgres(dbconn: PostgresDBConn,
 
         cur.execute(sql_aggregate.format(month))
 
-        if len(agg_rows) == 0:  # pragma: no cover
+        if len(agg_rows) == 0:
             warnings.warn('no rows to aggregate! '
                           f'table: static_{month}_aggregate')
             return

@@ -134,3 +134,6 @@ def test_sql_query_strings_postgres(tmpdir):
                 mmsis=[316000000, 316000001],
             ).gen_qry(fcn=sqlfcn.crawl_dynamic_static)
             next(rowgen)
+        aisdatabase.rebuild_indexes(months[0], verbose=False)
+        aisdatabase.deduplicate_dynamic_msgs(months[0], verbose=True)
+        aisdatabase.deduplicate_dynamic_msgs(months[0], verbose=False)
