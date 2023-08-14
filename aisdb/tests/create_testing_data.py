@@ -5,11 +5,10 @@ from shapely.geometry import Polygon
 
 from aisdb.gis import Domain
 from aisdb.database.create_tables import (
-    sqlite_createtable_dynamicreport,
-    sqlite_createtable_staticreport,
+    sql_createtable_dynamic,
+    sql_createtable_static,
 )
 from aisdb import decode_msgs, DBConn
-from aisdb.database.create_tables import aggregate_static_msgs_sqlite
 
 postgres_test_conn = dict(hostaddr='fc00::17',
                           user='postgres',
@@ -20,8 +19,8 @@ postgres_test_conn = dict(hostaddr='fc00::17',
 def sample_dynamictable_insertdata(*, dbconn):
     #db = DBConn()
     assert isinstance(dbconn, DBConn)
-    sqlite_createtable_staticreport(dbconn, month="200001")
-    sqlite_createtable_dynamicreport(dbconn, month="200001")
+    dbconn.execute(sql_createtable_static.format(month="200001"))
+    dbconn.execute(sql_createtable_dynamic.format(month="200001"))
     dbconn.execute(
         'INSERT OR IGNORE INTO ais_200001_dynamic (mmsi, time, longitude, latitude, cog, sog) VALUES (000000001, 946702800, -60.994833, 47.434647238127695, -1, -1)'
     )
@@ -89,6 +88,6 @@ def sample_database_file(dbpath):
             vacuum=False,
             skip_checksum=True,
         )
-        aggregate_static_msgs_sqlite(dbconn, months[:1])
+        dbconn.aggregate_static_msgs(months)
         dbconn.commit()
     return months

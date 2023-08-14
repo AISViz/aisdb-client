@@ -1,13 +1,11 @@
 import os
 import warnings
-import sqlite3
 
 from aisdb.database.dbconn import DBConn, PostgresDBConn
 from aisdb.database.decoder import decode_msgs
 from aisdb.database.create_tables import (
-    aggregate_static_msgs_sqlite,
-    sqlite_createtable_dynamicreport,
-    sqlite_createtable_staticreport,
+    sql_createtable_dynamic,
+    sql_createtable_static,
 )
 from aisdb.tests.create_testing_data import postgres_test_conn
 
@@ -15,13 +13,13 @@ from aisdb.tests.create_testing_data import postgres_test_conn
 def test_create_static_table(tmpdir):
     dbpath = os.path.join(tmpdir, 'test_create_static_table.db')
     with DBConn(dbpath) as dbconn:
-        sqlite_createtable_staticreport(dbconn, month="202009")
+        dbconn.execute(sql_createtable_dynamic.format("202009"))
 
 
 def test_create_dynamic_table(tmpdir):
     dbpath = os.path.join(tmpdir, 'test_create_dynamic_table.db')
     with DBConn(dbpath) as dbconn:
-        sqlite_createtable_dynamicreport(dbconn, month="202009")
+        dbconn.execute(sql_createtable_dynamic.format("202009"))
 
 
 def test_create_static_aggregate_table(tmpdir):
@@ -31,7 +29,7 @@ def test_create_static_aggregate_table(tmpdir):
                                    'test_data_20210701.csv')
     with DBConn(dbpath) as dbconn:
         decode_msgs([testingdata_csv], dbconn=dbconn, source='TESTING')
-        aggregate_static_msgs_sqlite(dbconn, ["202107"])
+        dbconn.aggregate_static_msgs(["202107"])
 
 
 def test_create_from_CSV(tmpdir):

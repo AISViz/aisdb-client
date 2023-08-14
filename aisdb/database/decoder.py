@@ -16,10 +16,6 @@ from dateutil.rrule import rrule, MONTHLY
 import psycopg
 
 from aisdb.aisdb import decoder
-from aisdb.database.create_tables import (
-    aggregate_static_msgs_postgres,
-    aggregate_static_msgs_sqlite,
-)
 from aisdb.database.dbconn import SQLiteDBConn, PostgresDBConn
 from aisdb.proc_util import getfiledate
 from aisdb import sqlpath
@@ -354,14 +350,7 @@ def decode_msgs(filepaths,
         dbconn.execute('ANALYZE')
         dbconn.commit()
 
-    # reaggreate_months = np.unique( [month.strftime('%Y%m') for month in filedates])
-
-    if isinstance(dbconn, SQLiteDBConn):
-        aggregate_static_msgs_sqlite(dbconn, months, verbose)
-    elif isinstance(dbconn, PostgresDBConn):
-        aggregate_static_msgs_postgres(dbconn, months, verbose)
-    else:
-        assert False
+    dbconn.aggregate_static_msgs(months, verbose)
 
     if vacuum is not False:
         print("finished parsing data\nvacuuming...")

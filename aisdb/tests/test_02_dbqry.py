@@ -12,7 +12,7 @@ from aisdb import (
     sqlfcn,
     sqlfcn_callbacks,
 )
-from aisdb.database.create_tables import sqlite_createtable_dynamicreport
+from aisdb.database.create_tables import sql_createtable_dynamic
 from aisdb.database.decoder import decode_msgs
 from aisdb.tests.create_testing_data import (
     postgres_test_conn,
@@ -32,7 +32,7 @@ def test_query_emptytable(tmpdir):
                 end=datetime(2021, 1, 7),
                 callback=sqlfcn_callbacks.in_timerange_validmmsi,
             )
-            sqlite_createtable_dynamicreport(dbconn, month='202101')
+            dbconn.execute(sql_createtable_dynamic.format('202101'))
             rows = q.gen_qry(reaggregate_static=True)
             assert list(rows) == []
     except UserWarning as warn:

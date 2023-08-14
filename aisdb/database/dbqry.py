@@ -12,11 +12,7 @@ import numpy as np
 import psycopg
 
 from aisdb.database import sqlfcn, sqlfcn_callbacks
-from aisdb.database.create_tables import (
-    aggregate_static_msgs_postgres,
-    aggregate_static_msgs_sqlite,
-    sqlite_createtable_dynamicreport,
-)
+from aisdb.database.create_tables import sql_createtable_dynamic
 from aisdb.database.dbconn import PostgresDBConn, SQLiteDBConn
 from aisdb.webdata.marinetraffic import VesselInfo
 
@@ -140,7 +136,7 @@ class DBQuery(UserDict):
             if verbose:
                 print(f'building static index for month {month}...',
                       flush=True)
-            aggregate_static_msgs_sqlite(self.dbconn, [month], verbose)
+            self.dbconn.aggregate_static_msgs([month], verbose)
 
         # check if dynamic tables exist
         cur.execute(
@@ -148,7 +144,7 @@ class DBQuery(UserDict):
             'type="table" and name=?', [f'ais_{month}_dynamic'])
         if len(cur.fetchall()) == 0:
             if isinstance(self.dbconn, SQLiteDBConn):
-                sqlite_createtable_dynamicreport(self.dbconn, month)
+                self.dbconn.execute(sql_createtable_dynamic.format(month))
 
             warnings.warn('No data for selected time range! '
                           f'{rng_string}')
@@ -176,7 +172,7 @@ class DBQuery(UserDict):
             if verbose:
                 print(f'building static index for month {month}...',
                       flush=True)
-            aggregate_static_msgs_postgres(self.dbconn, [month], verbose)
+            self.dbconn.aggregate_static_msgs([month], verbose)
 
         # check if dynamic tables exist
         cur.execute('SELECT table_name FROM information_schema.tables '
