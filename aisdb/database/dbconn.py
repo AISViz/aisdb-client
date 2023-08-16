@@ -227,7 +227,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
 
     def _set_db_daterange(self):
 
-        dynamic_tables_qry = (
+        dynamic_tables_qry = psycopg.sql.SQL(
             "select table_name from information_schema.tables "
             r"where table_name LIKE 'ais\_______\_dynamic' ORDER BY table_name"
         )
@@ -236,8 +236,9 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         dynamic_tables = cur.fetchall()
 
         if dynamic_tables != []:
-            db_months = sorted(
-                [table[0].split('_')[1] for table in dynamic_tables])
+            db_months = sorted([
+                table['table_name'].split('_')[1] for table in dynamic_tables
+            ])
             self.db_daterange = {
                 'start':
                 datetime(int(db_months[0][:4]), int(db_months[0][4:]),
@@ -265,10 +266,12 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         # store the connection string as an attribute
         # this info will be passed to rust when possible
         if libpq_connstring is not None:
-            self.conn = psycopg.connect(libpq_connstring)
+            self.conn = psycopg.connect(libpq_connstring,
+                                        row_factory=psycopg.rows.dict_row)
             self.connection_string = libpq_connstring
         else:
-            self.conn = psycopg.connect(**kwargs)
+            self.conn = psycopg.connect(row_factory=psycopg.rows.dict_row,
+                                        **kwargs)
             self.connection_string = 'postgresql://'
 
             if 'user' in kwargs.keys():
@@ -317,6 +320,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         self.__repr__ = self.conn.__repr__
         #conn = psycopg.connect(conninfo=libpq_connstring)
         self.pgconn = self.conn.pgconn
+        self._adapters = self.conn.adapters
 
         cur = self.cursor()
 
@@ -491,10 +495,9 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             assert len(skip_nommsi.shape) == 2
             skip_nommsi = skip_nommsi[skip_nommsi[:, 0] != None]
             assert len(skip_nommsi) > 1
-            insert_stmt = (
-                f'INSERT INTO static_{month}_aggregate '
-                f"VALUES ({','.join([formatter for _ in range(skip_nommsi.shape[1])])}) "
-            )
+            insert_vals = ','.join(['%s' for _ in range(skip_nommsi.shape[1])])
+            insert_stmt = (f'INSERT INTO static_{month}_aggregate '
+                           f'VALUES ({insert_vals})')
             cur.executemany(insert_stmt, map(tuple, skip_nommsi))
 
             self.commit()

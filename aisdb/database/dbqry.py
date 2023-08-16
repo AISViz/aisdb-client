@@ -155,17 +155,27 @@ class DBQuery(UserDict):
                                rng_string: str,
                                reaggregate_static: bool = False,
                                verbose: bool = False):
+
         # check if static tables exist
-        cur.execute('SELECT table_name FROM information_schema.tables '
-                    f'WHERE table_name = \'ais_{month}_static\'')
-        if len(cur.fetchall()) == 0:
-            #sqlite_createtable_staticreport(self.dbconn, month)
+        static_qry = psycopg.sql.SQL('''
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE information_schema.tables.table_name = {TABLE}
+        ''').format(TABLE=psycopg.sql.Literal(f'ais_{month}_static'))
+        cur.execute(static_qry)
+        count_static = cur.fetchall()
+
+        if len(count_static) == 0:
             warnings.warn('No static data for selected time range! '
                           f'{rng_string}')
 
         # check if aggregate tables exist
-        cur.execute('SELECT table_name FROM information_schema.tables '
-                    f'WHERE table_name = \'static_{month}_aggregate\'')
+        cur.execute(
+            psycopg.sql.SQL('''
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_name = {TABLE}
+        ''').format(TABLE=psycopg.sql.Literal(f'static_{month}_aggregate')))
         res = cur.fetchall()
 
         if len(res) == 0 or reaggregate_static:
@@ -175,8 +185,12 @@ class DBQuery(UserDict):
             self.dbconn.aggregate_static_msgs([month], verbose)
 
         # check if dynamic tables exist
-        cur.execute('SELECT table_name FROM information_schema.tables '
-                    f'WHERE table_name = \'ais_{month}_dynamic\'')
+        cur.execute(
+            psycopg.sql.SQL('''
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_name = {TABLE}
+        ''').format(TABLE=psycopg.sql.Literal(f'ais_{month}_dynamic')))
 
         if len(cur.fetchall()) == 0:  # pragma: no cover
             #if isinstance(self.dbconn, ConnectionType.SQLITE.value):
@@ -286,12 +300,12 @@ class DBQuery(UserDict):
                 print(qry)
 
             # get 500k rows at a time, yield sets of rows for each unique MMSI
-            mmsi_rows = []
+            mmsi_rows: list = []
             dt = datetime.now()
-            #cur = self.dbconn.cursor()
             _ = cur.execute(qry)
-            res = cur.fetchmany(10**5)
+            res: list = cur.fetchmany(10**5)
             delta = datetime.now() - dt
+
             if verbose:
                 print(
                     f'query time: {delta.total_seconds():.2f}s\nfetching rows...'
@@ -302,6 +316,9 @@ class DBQuery(UserDict):
 
             while len(res) > 0:
                 mmsi_rows += res
+                # workaround for postgres dict_rows
+                if isinstance(mmsi_rows[0], dict):
+                    mmsi_rows = list(map(tuple, map(dict.values, mmsi_rows)))
                 ummsi_idx = np.where(
                     np.array(mmsi_rows)[:-1,
                                         0] != np.array(mmsi_rows)[1:,

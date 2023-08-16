@@ -125,7 +125,8 @@ def TrackGen(rowgen: iter, decimate: False) -> dict:
     assert isinstance(rowgen, types.GeneratorType)
     for rows in rowgen:
         assert not (rows is None or len(rows) == 0), 'rows cannot be empty'
-        assert isinstance(rows[0], (sqlite3.Row, dict))
+        assert isinstance(
+            rows[0], (sqlite3.Row, dict)), f'unknown row type: {type(rows[0])}'
         if firstrow:
             keys = set(rows[0].keys())
             static = keys.intersection(set(staticcols))
