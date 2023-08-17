@@ -400,9 +400,10 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             dbconn.commit()
             previous = dbconn.conn.autocommit
             dbconn.conn.autocommit = True
-            dbconn.execute(
-                f'VACUUM (analyze, index_cleanup, verbose) ais_{month}_dynamic'
-            )
+            dbconn.execute('VACUUM (analyze, index_cleanup, verbose)\n'
+                           f'ais_{month}_dynamic')
+            dbconn.execute(f'CLUSTER ais_{month}_dynamic (verbose)\n'
+                           f'USING idx_ais_{month}_dynamic_cluster')
             dbconn.conn.autocommit = previous
 
     def deduplicate_dynamic_msgs(self, month: str, verbose=True):
