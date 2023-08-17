@@ -34,6 +34,8 @@ class DBQuery(UserDict):
                 this generates SQL code to apply filtering on columns (mmsi,
                 time), and requires (start, end) as arguments in datetime
                 format.
+            limit (int)
+                Optionally limit the database query to a finite number of rows
 
             **kwargs (dict)
                 more arguments that will be supplied to the query function
@@ -296,6 +298,10 @@ class DBQuery(UserDict):
                 assert False
 
             qry = fcn(**self.data)
+
+            if 'limit' in self.data.keys():
+                qry += f'\nLIMIT {self.data["limit"]}'
+
             if verbose:
                 print(qry)
 
@@ -316,13 +322,10 @@ class DBQuery(UserDict):
 
             while len(res) > 0:
                 mmsi_rows += res
-                # workaround for postgres dict_rows
-                if isinstance(mmsi_rows[0], dict):
-                    mmsi_rows = list(map(tuple, map(dict.values, mmsi_rows)))
+                mmsi_rowvals = [r['mmsi'] for r in mmsi_rows]
                 ummsi_idx = np.where(
-                    np.array(mmsi_rows)[:-1,
-                                        0] != np.array(mmsi_rows)[1:,
-                                                                  0])[0] + 1
+                    np.array(mmsi_rowvals)[:-1] != np.array(mmsi_rowvals)
+                    [1:])[0] + 1
                 ummsi_idx = reduce(np.append,
                                    ([0], ummsi_idx, [len(mmsi_rows)]))
                 for i in range(len(ummsi_idx) - 2):
