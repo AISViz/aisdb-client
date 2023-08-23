@@ -423,9 +423,6 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
                 WHERE row_number > 1)
             ''')
         dbconn.commit()
-        dbconn.execute(
-            f'ALTER INDEX idx_ais_{month}_dynamic_cluster ADD UNIQUE')
-        dbconn.commit()
         if verbose:
             print(f'done deduplicating: {month}')
 
