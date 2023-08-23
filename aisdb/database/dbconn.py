@@ -218,6 +218,7 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
                 user='postgres',
                 port=5432,
                 password=os.environ.get('POSTGRES_PASSWORD'),
+                dbname='postgres',
             )
 
             # Alternatively, connect using a connection string:
@@ -340,7 +341,9 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         with self.cursor() as cur:
             cur.execute(sql, args)
 
-    def rebuild_indexes(self, month, vacuum=False, verbose=True):
+    def rebuild_indexes(self, month, verbose=True):
+        if verbose:
+            print(f'indexing {month}...')
         dbconn = self.conn
         dbconn.execute(
             f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_mmsi '
@@ -354,17 +357,6 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         dbconn.commit()
         if verbose:
             print(f'done indexing time: {month}')
-        #dbconn.execute(f'''
-        #    DELETE FROM ais_{month}_dynamic WHERE ctid IN
-        #        (SELECT ctid FROM
-        #            (SELECT *, ctid, row_number() OVER
-        #                (PARTITION BY mmsi, time, source ORDER BY ctid)
-        #            FROM ais_{month}_dynamic ) AS duplicates_{month}
-        #        WHERE row_number > 1)
-        #    ''')
-        #dbconn.commit()
-        #if verbose:
-        #    print(f'done deduplicating: {month}')
         dbconn.execute(
             f'CREATE INDEX IF NOT EXISTS idx_ais_{month}_dynamic_lon '
             f'ON ais_{month}_dynamic (longitude)')
@@ -396,21 +388,12 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
         dbconn.commit()
         if verbose:
             print(f'done indexing static time: {month}')
-        if vacuum is True and isinstance(dbconn, PostgresDBConn):
-            dbconn.commit()
-            previous = dbconn.conn.autocommit
-            dbconn.conn.autocommit = True
-            dbconn.execute('VACUUM (analyze, index_cleanup, verbose)\n'
-                           f'ais_{month}_dynamic')
-            if verbose:
-                print(f'done vacuuming: {month}')
-            dbconn.execute(f'CLUSTER ais_{month}_dynamic (verbose)\n'
-                           f'USING idx_ais_{month}_dynamic_cluster')
-            dbconn.execute(f'ais_{month}_dynamic (verbose)\n'
-                           f'USING idx_ais_{month}_dynamic_cluster')
-            if verbose:
-                print(f'done clustering: {month}')
-            dbconn.conn.autocommit = previous
+        dbconn.execute(
+            f'CLUSTER {"VERBOSE" if verbose else ""} ais_{month}_dynamic\n'
+            f'USING idx_ais_{month}_dynamic_cluster')
+        dbconn.commit()
+        if verbose:
+            print(f'done clustering: {month}')
 
     def deduplicate_dynamic_msgs(self, month: str, verbose=True):
         dbconn = self.conn
