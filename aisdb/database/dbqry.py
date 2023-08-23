@@ -322,10 +322,9 @@ class DBQuery(UserDict):
 
             while len(res) > 0:
                 mmsi_rows += res
-                mmsi_rowvals = [r['mmsi'] for r in mmsi_rows]
+                mmsi_rowvals = np.array([r['mmsi'] for r in mmsi_rows])
                 ummsi_idx = np.where(
-                    np.array(mmsi_rowvals)[:-1] != np.array(mmsi_rowvals)
-                    [1:])[0] + 1
+                    mmsi_rowvals[:-1] != mmsi_rowvals[1:])[0] + 1
                 ummsi_idx = reduce(np.append,
                                    ([0], ummsi_idx, [len(mmsi_rows)]))
                 for i in range(len(ummsi_idx) - 2):

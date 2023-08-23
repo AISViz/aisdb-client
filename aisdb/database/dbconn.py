@@ -402,8 +402,14 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             dbconn.conn.autocommit = True
             dbconn.execute('VACUUM (analyze, index_cleanup, verbose)\n'
                            f'ais_{month}_dynamic')
+            if verbose:
+                print(f'done vacuuming: {month}')
             dbconn.execute(f'CLUSTER ais_{month}_dynamic (verbose)\n'
                            f'USING idx_ais_{month}_dynamic_cluster')
+            dbconn.execute(f'ais_{month}_dynamic (verbose)\n'
+                           f'USING idx_ais_{month}_dynamic_cluster')
+            if verbose:
+                print(f'done clustering: {month}')
             dbconn.conn.autocommit = previous
 
     def deduplicate_dynamic_msgs(self, month: str, verbose=True):
@@ -416,6 +422,9 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
                     FROM ais_{month}_dynamic ) AS duplicates_{month}
                 WHERE row_number > 1)
             ''')
+        dbconn.commit()
+        dbconn.execute(
+            f'ALTER INDEX idx_ais_{month}_dynamic_cluster ADD UNIQUE')
         dbconn.commit()
         if verbose:
             print(f'done deduplicating: {month}')
@@ -448,7 +457,8 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
                 print('aggregating static reports into '
                       f'static_{month}_aggregate...')
             cur.execute(f'SELECT DISTINCT s.mmsi FROM ais_{month}_static AS s')
-            mmsis = np.array(cur.fetchall(), dtype=int).flatten()
+            mmsi_res = [m['mmsi'] for m in cur.fetchall()]
+            mmsis = np.array(mmsi_res, dtype=int)
 
             cur.execute(f'DROP TABLE IF EXISTS static_{month}_aggregate')
 
@@ -463,7 +473,8 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             agg_rows = []
             for mmsi in mmsis:
                 _ = cur.execute(sql_select, (str(mmsi), ))
-                cols = np.array(cur.fetchall(), dtype=object).T
+                col_vals = [tuple(d.values()) for d in cur.fetchall()]
+                cols = np.array(col_vals, dtype=object).T
                 assert len(cols) > 0
 
                 filtercols = np.array(
