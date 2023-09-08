@@ -146,7 +146,9 @@ class SQLiteDBConn(_DBConn, sqlite3.Connection):
             agg_rows = []
             for mmsi in mmsis:
                 _ = cur.execute(sql_select, (str(mmsi), ))
-                cols = np.array(cur.fetchall(), dtype=object).T
+                cur_mmsi = cur.fetchall()
+
+                cols = np.array(cur_mmsi, dtype=object).T
                 assert len(cols) > 0
 
                 filtercols = np.array(
@@ -437,24 +439,30 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
                 print('aggregating static reports into '
                       f'static_{month}_aggregate...')
             cur.execute(f'SELECT DISTINCT s.mmsi FROM ais_{month}_static AS s')
-            mmsi_res = [m['mmsi'] for m in cur.fetchall()]
-            mmsis = np.array(mmsi_res, dtype=int)
+            mmsi_res = cur.fetchall()
+            if mmsi_res == []:
+                mmsis = np.array([], dtype=int)
+            else:
+                mmsis = np.array(sorted([r['mmsi'] for r in mmsi_res]),
+                                 dtype=int).flatten()
 
-            cur.execute(f'DROP TABLE IF EXISTS static_{month}_aggregate')
+            cur.execute(
+                psycopg.sql.SQL(
+                    f'DROP TABLE IF EXISTS static_{month}_aggregate'))
 
-            sql_select = f'''
+            sql_select = psycopg.sql.SQL(f'''
               SELECT
                 s.mmsi, s.imo, TRIM(vessel_name) as vessel_name, s.ship_type,
                 s.call_sign, s.dim_bow, s.dim_stern, s.dim_port, s.dim_star,
                 s.draught
               FROM ais_{month}_static AS s WHERE s.mmsi = %s
-            '''
+            ''')
 
             agg_rows = []
             for mmsi in mmsis:
                 _ = cur.execute(sql_select, (str(mmsi), ))
-                col_vals = [tuple(d.values()) for d in cur.fetchall()]
-                cols = np.array(col_vals, dtype=object).T
+                cur_mmsi = [tuple(i.values()) for i in cur.fetchall()]
+                cols = np.array(cur_mmsi, dtype=object).T
                 assert len(cols) > 0
 
                 filtercols = np.array(
@@ -488,8 +496,9 @@ class PostgresDBConn(_DBConn, psycopg.Connection):
             skip_nommsi = skip_nommsi[skip_nommsi[:, 0] != None]
             assert len(skip_nommsi) > 1
             insert_vals = ','.join(['%s' for _ in range(skip_nommsi.shape[1])])
-            insert_stmt = (f'INSERT INTO static_{month}_aggregate '
-                           f'VALUES ({insert_vals})')
+            insert_stmt = psycopg.sql.SQL(
+                f'INSERT INTO static_{month}_aggregate '
+                f'VALUES ({insert_vals})')
             cur.executemany(insert_stmt, map(tuple, skip_nommsi))
 
             self.commit()
