@@ -1,15 +1,15 @@
-//#[cfg(not(debug_assertions))]
+#[cfg(not(debug_assertions))]
 use std::fs::{remove_file, File};
-//#[cfg(not(debug_assertions))]
+#[cfg(not(debug_assertions))]
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
-//#[cfg(not(debug_assertions))]
+#[cfg(not(debug_assertions))]
 use reqwest::blocking::get;
 use wasm_opt::OptimizationOptions;
 
-//#[cfg(not(debug_assertions))]
+#[cfg(not(debug_assertions))]
 fn download_gitlab_artifacts(branch: &str) -> Result<PathBuf, String> {
     let url = format!(
         "https://git-dev.cs.dal.ca/api/v4/projects/132/jobs/artifacts/{}/download?job=wasm-assets",
@@ -83,6 +83,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // remove zipfile
         remove_file("artifacts.zip").expect("deleting zip");
+    }
+
+    if std::env::var("GITLAB_CI").is_ok() {
+        assert!(PathBuf::from("./aisdb_web/map/pkg").exists())
     }
 
     // web assets may also be built locally if OFFLINE_BUILD is set
