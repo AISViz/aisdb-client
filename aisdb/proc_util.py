@@ -1,8 +1,11 @@
-import os
-from functools import partial, reduce
 from datetime import datetime, timedelta
-import re
+from functools import partial, reduce
+from tempfile import SpooledTemporaryFile
 import csv
+import io
+import os
+import re
+import typing
 
 import numpy as np
 
@@ -92,8 +95,8 @@ _columns_order = [
 
 def write_csv(
     tracks,
-    fpath,
-    skipcols=['label', 'in_zone'],
+    fpath: io.BytesIO | str | SpooledTemporaryFile,
+    skipcols: list = ['label', 'in_zone'],
 ):
     ''' write track vector dictionaries as CSV file
 
@@ -155,16 +158,30 @@ def write_csv(
 
             writer.writerow(row)
 
-    with open(fpath, 'w', newline='') as f:
-        f.write(','.join(colnames) + '\n')
-        writer = csv.writer(f,
-                            delimiter=',',
-                            quotechar="'",
-                            quoting=csv.QUOTE_NONE,
-                            dialect='unix')
-        _append(tr1, writer, colnames, decimals)
-        for track in tracks_dt:
-            _append(track, writer, colnames, decimals)
+    #with open(fpath, 'w', newline='') as f:
+    if isinstance(fpath, str):
+        f = open(fpath, mode='w')
+    elif isinstance(fpath, (io.BytesIO, SpooledTemporaryFile)):
+        f = io.TextIOWrapper(fpath, encoding='utf8', newline='')
+    else:
+        raise ValueError(f'invalid type for fpath: {type(fpath)}')
+
+    #with f:
+    f.write(','.join(colnames) + '\n')
+    writer = csv.writer(f,
+                        delimiter=',',
+                        quotechar="'",
+                        quoting=csv.QUOTE_NONE,
+                        dialect='unix')
+    _append(tr1, writer, colnames, decimals)
+    for track in tracks_dt:
+        _append(track, writer, colnames, decimals)
+
+    if isinstance(fpath, str):
+        f.close()
+    else:
+        # prevent bytesIO buf from being cleaned up with TextIOWrapper
+        f.detach()
 
     return
 
