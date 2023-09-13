@@ -28,6 +28,27 @@ services:
       dockerfile: ./docker/python_build.Dockerfile
     container_name: aisdb-python
 
+  rest-api:
+    build: 
+      target: aisdb-python
+      context: .
+      dockerfile: ./docker/python_build.Dockerfile
+    environment:
+      AISDB_REST_DBHOST: ${AISDB_REST_DBHOST:-fc00::17}
+      AISDB_REST_DBPORT: ${AISDB_REST_DBPORT:-5431}
+      AISDB_REST_DBUSER: ${AISDB_REST_DBUSER:-postgres}
+      AISDB_REST_DBPASSWORD: ${AISDB_REST_DBPASSWORD:-devel}
+    working_dir: /aisdb_src
+    container_name: rest-api
+    command:
+      ["gunicorn", "--chdir=/aisdb_src", "aisdb.rest_api:app", "-w8", "--threads=1", "-b=[::]:5000"]
+    networks:
+      ipv6_private:
+        ipv6_address: "fc00::15"
+    depends_on:
+      - postgresdb
+
+
   # run python tests using aisdb-python
   python-test:
     build:

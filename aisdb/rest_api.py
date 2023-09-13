@@ -7,6 +7,7 @@ Deploying flask to production with IIS:
 '''
 from datetime import datetime, timedelta
 from tempfile import SpooledTemporaryFile
+import os
 import secrets
 
 import aisdb
@@ -27,39 +28,73 @@ MAX_CLIENT_MEMORY = 1024 * 1e6  # 1GB
 app = Flask("aisdb-rest-api")
 app.config.from_mapping(SECRET_KEY=secrets.token_bytes())
 
-test_db_args = dict(
-    host='fc00::17',
-    port=5431,
-    user='postgres',
-    password='devel',
+# postgres database connection arguments
+db_args = dict(
+    host=os.environ.get('AISDB_REST_DBHOST', 'fc00::17'),
+    port=os.environ.get('AISDB_REST_DBPORT', 5431),
+    user=os.environ.get('AISDB_REST_DBUSER', 'postgres'),
+    password=os.environ.get('AISDB_REST_DBPASSWORD', 'devel'),
 )
 
-default_query = {
-    #'start': int((datetime.utcnow() - timedelta(hours=24)).timestamp()),
-    #'end': int(datetime.utcnow().timestamp()),
-    'start': int(datetime(2021, 7, 1).timestamp()),
-    'end': int(datetime(2021, 7, 30).timestamp()),
-    'xmin': -65,
-    'xmax': -62,
-    'ymin': 43,
-    'ymax': 45,
-}
+# verify database connection and prepare an example GET request
+with PostgresDBConn(**db_args) as dbconn:
+    db_rng = dbconn.db_daterange
+    end = db_rng['end']
+    start = max(db_rng['start'], db_rng['end'] - timedelta(days=31))
+    default_query = {
+        'start': int(datetime(start.year, start.month, start.day).timestamp()),
+        'end': int(datetime(end.year, end.month, end.day).timestamp()),
+        'xmin': -65,
+        'xmax': -62,
+        'ymin': 43,
+        'ymax': 45,
+    }
 
 
 @app.route('/', methods=['GET', 'POST'])
 def download():
     http_qry = dict(request.args)
+    example_GET_qry = '<div id="base_uri" style="display: inline;" ></div>?' + '&'.join(
+        f'{k}={v}' for k, v in default_query.items())
 
     # validate the request parameters
     need_keys = set(default_query.keys())
     recv_keys = set(http_qry.keys())
     missing = need_keys - recv_keys
 
+    if len(recv_keys) == 0:
+        return Markup(
+            "<h3>AIS REST API</h3>"
+            "<p>"
+            "Query AIS message history using time and coordinate region to download a CSV data export.&ensp;"
+            "Begin request using a GET or POST request to this endpoint."
+            "</p>"
+            "<p>Description of query parameters:</p>"
+            "<ul>"
+            "<li>xmin: minimum longitude (decimal degrees)</li>"
+            "<li>xmax: maximum longitude (decimal degrees)</li>"
+            "<li>ymin: minimum latitude (decimal degrees)</li>"
+            "<li>ymax: maximum latitude (decimal degrees)</li>"
+            "<li>start: beginning timestamp (epoch seconds)</li>"
+            "<li>end: end timestamp (epoch seconds)</li>"
+            "</ul>"
+            '<p>'
+            'Requests are limited to 31 days at a time. Data is available from'
+            f' <code>{db_rng["start"]}</code>'
+            ' to'
+            f' <code>{db_rng["end"]}</code>.'
+            '</p>'
+            '<p>Example GET request:</p>'
+            f'<code>{example_GET_qry}<code>'
+            '''
+            <script>
+            document.getElementById("base_uri").innerHTML = window.location;
+            </script>
+            ''')
+
     if len(missing) > 0:
-        example_qry = '?' + '&'.join(f'{k}={v}'
-                                     for k, v in default_query.items())
         return Markup(f'Error: missing keys from request: {missing}<br>'
-                      f'example:<br><code>{example_qry}<code>')
+                      f'example:<br><code>{example_GET_qry}<code>')
 
     # convert parameter types from string
     http_qry['start'] = datetime.utcfromtimestamp(int(http_qry['start']))
@@ -82,8 +117,7 @@ def download():
 
     download_name = f'ais_{http_qry["start"].date()}_{http_qry["end"].date()}.csv'
 
-    with PostgresDBConn(**test_db_args) as dbconn:
-
+    with PostgresDBConn(**db_args) as dbconn:
         buf = SpooledTemporaryFile(max_size=MAX_CLIENT_MEMORY)
 
         dbqry = DBQuery(dbconn=dbconn,

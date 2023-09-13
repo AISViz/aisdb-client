@@ -6,15 +6,6 @@ RUN ulimit -n 1024000 && yum update -y && yum upgrade -y
 #RUN ulimit -n 1024000 && yum install -y glibc postgresql-libs python-sphinx nodejs npm
 RUN ulimit -n 1024000 && yum install -y postgresql-libs python-sphinx
 
-# Build a recent version of clang for wasm-pack
-#RUN git clone --depth=1 https://github.com/llvm/llvm-project.git /llvm-project
-#RUN mkdir /llvm-project/build
-#WORKDIR /llvm-project/build
-#RUN cmake -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles" ../llvm
-#RUN make -j8 clang
-#ARG PATH=$PATH:/llvm-project/build/bin
-#ENV PATH=$PATH:/llvm-project/build/bin
-
 RUN rustup update
 
 WORKDIR /aisdb_src
@@ -22,8 +13,6 @@ ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL="sparse"
 ENV VIRTUAL_ENV="/env_aisdb"
 ARG CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-
-#RUN cargo install wasm-pack
 
 COPY Cargo.toml Cargo.lock .coveragerc pyproject.toml readme.rst ./
 COPY aisdb_lib/ aisdb_lib/
@@ -39,8 +28,6 @@ RUN python3.9 -m venv $VIRTUAL_ENV
 RUN $VIRTUAL_ENV/bin/python -m pip install --upgrade --verbose --no-warn-script-location .[test,docs] pip wheel setuptools numpy
 
 
-#COPY client_webassembly/ client_webassembly/
-#COPY aisdb_web/ aisdb_web/
 COPY receiver/ receiver/
 COPY src/ src/
 RUN maturin build --release --strip --compatibility manylinux2014 --interpreter 3.11 --locked
@@ -60,6 +47,7 @@ CMD ["build", "--release", "--strip", "--compatibility", "manylinux2014", "--int
 FROM python:slim AS aisdb-python
 RUN apt-get update -y && apt-get upgrade -y
 RUN python -m pip install --upgrade pip packaging Pillow requests selenium tqdm numpy webdriver-manager pytest coverage pytest-cov pytest-dotenv psycopg[binary] orjson websockets
+RUN python -m pip install gunicorn
 COPY aisdb/tests/testdata/ /aisdb_src/aisdb/tests/testdata/
 WORKDIR /aisdb
 COPY --from=aisdb-manylinux /aisdb_src/target/wheels/* wheels/
