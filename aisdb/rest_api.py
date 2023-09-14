@@ -7,6 +7,7 @@ Deploying flask to production with IIS:
 '''
 from datetime import datetime, timedelta
 from tempfile import SpooledTemporaryFile
+import gzip
 import os
 import secrets
 
@@ -16,8 +17,9 @@ from aisdb import PostgresDBConn, DBQuery
 from flask import (
     Flask,
     Markup,
+    Response,
+    flash,
     request,
-    send_file,
 )
 
 # Maximum bytes for client CSV files stored in memory before spilling to disk.
@@ -64,20 +66,20 @@ def download():
 
     if len(recv_keys) == 0:
         return Markup(
-            "<h3>AIS REST API</h3>"
-            "<p>"
-            "Query AIS message history using time and coordinate region to download a CSV data export.&ensp;"
-            "Begin request using a GET or POST request to this endpoint."
-            "</p>"
-            "<p>Description of query parameters:</p>"
-            "<ul>"
-            "<li>xmin: minimum longitude (decimal degrees)</li>"
-            "<li>xmax: maximum longitude (decimal degrees)</li>"
-            "<li>ymin: minimum latitude (decimal degrees)</li>"
-            "<li>ymax: maximum latitude (decimal degrees)</li>"
-            "<li>start: beginning timestamp (epoch seconds)</li>"
-            "<li>end: end timestamp (epoch seconds)</li>"
-            "</ul>"
+            '<h3>AIS REST API</h3>'
+            '<p>'
+            'Query AIS message history using time and coordinate region to download a CSV data export.&ensp;'
+            'Begin request using a GET or POST request to this endpoint.'
+            '</p>'
+            '<p>Description of query parameters:</p>'
+            '<ul>'
+            '<li>xmin: minimum longitude (decimal degrees)</li>'
+            '<li>xmax: maximum longitude (decimal degrees)</li>'
+            '<li>ymin: minimum latitude (decimal degrees)</li>'
+            '<li>ymax: maximum latitude (decimal degrees)</li>'
+            '<li>start: beginning timestamp (epoch seconds)</li>'
+            '<li>end: end timestamp (epoch seconds)</li>'
+            '</ul>'
             '<p>'
             'Requests are limited to 31 days at a time. Data is available from'
             f' <code>{db_rng["start"]}</code>'
@@ -86,9 +88,13 @@ def download():
             '</p>'
             '<p>Example GET request:</p>'
             f'<code>{example_GET_qry}<code>'
+            #'<form action="/" method="POST">'
+            #'</form>'
             '''
             <script>
             document.getElementById("base_uri").innerHTML = window.location;
+
+            //let status_display = function() { };
             </script>
             ''')
 
@@ -115,8 +121,6 @@ def download():
     if not (-90 <= http_qry['ymin'] < http_qry['ymax'] <= 90):
         return Markup("Error: invalid longitude range")
 
-    download_name = f'ais_{http_qry["start"].date()}_{http_qry["end"].date()}.csv'
-
     with PostgresDBConn(**db_args) as dbconn:
         buf = SpooledTemporaryFile(max_size=MAX_CLIENT_MEMORY)
 
@@ -125,20 +129,34 @@ def download():
                         **http_qry).gen_qry(verbose=False)
 
         tracks = aisdb.TrackGen(dbqry, decimate=0.0001)
+        #tracks = aisdb.TrackGen(dbqry, decimate=False)
+
+        flash(Markup('<p>Querying database...</p>'))
+
         try:
             aisdb.write_csv(tracks, buf)
+            buf.flush()
         except aisdb.track_gen.EmptyRowsException:
             buf.close()
             return Markup("No results found for query")
         except Exception as err:
             raise err
 
-        buf.flush()
+        download_name = f'ais_{http_qry["start"].date()}_{http_qry["end"].date()}.csv'
         buf.seek(0)
         count = sum(1 for line in buf)
-        print(f'sending {count} rows to client')
+        print(f'sending {count} rows to client {request.remote_addr}',
+              flush=True)
         buf.seek(0)
-        return send_file(buf, as_attachment=True, download_name=download_name)
+        return Response(
+            gzip.compress(buf.read(), compresslevel=9),
+            mimetype='application/csv',
+            headers={
+                'Content-Disposition': f'attachment;filename={download_name}',
+                'Content-Encoding': 'gzip',
+                'Keep-Alive': 'timeout=0'
+            },
+        )
 
 
 if __name__ == '__main__':
