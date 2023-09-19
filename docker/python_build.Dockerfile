@@ -3,8 +3,7 @@ FROM ghcr.io/pyo3/maturin:v1.0.0 AS aisdb-manylinux
 # Updates
 RUN rm /var/cache/yum/*/7/timedhosts.txt
 RUN ulimit -n 1024000 && yum update -y && yum upgrade -y
-#RUN ulimit -n 1024000 && yum install -y glibc postgresql-libs python-sphinx nodejs npm
-RUN ulimit -n 1024000 && yum install -y postgresql-libs python-sphinx
+RUN ulimit -n 1024000 && yum install -y postgresql-libs python-sphinx perl-IPC-Cmd
 
 RUN rustup update
 
