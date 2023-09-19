@@ -125,8 +125,7 @@ class DBQuery(UserDict):
             'WHERE type="table" AND name=?', [f'ais_{month}_static'])
         if len(cur.fetchall()) == 0:
             #sqlite_createtable_staticreport(self.dbconn, month)
-            warnings.warn('No static data for selected time range! '
-                          f'{rng_string}')
+            warnings.warn(f'No results found in ais_{month}_static')
 
         # check if aggregate tables exist
         cur.execute(('SELECT * FROM sqlite_master '
@@ -256,7 +255,6 @@ class DBQuery(UserDict):
 
         # initialize dbconn, run query
         assert 'dbpath' not in self.data.keys()
-        cur = self.dbconn.cursor()
         db_rng = self.dbconn.db_daterange
 
         if not self.dbconn.db_daterange:
@@ -275,8 +273,8 @@ class DBQuery(UserDict):
         assert isinstance(db_rng['start'], date)
         assert isinstance(db_rng['end'], date)
 
+        cur = self.dbconn.cursor()
         for month in self.data['months']:
-
             month_date = datetime(int(month[:4]), int(month[4:]), 1)
             qry_start = self["start"] - timedelta(days=self["start"].day)
 
@@ -297,40 +295,37 @@ class DBQuery(UserDict):
             else:
                 assert False
 
-            qry = fcn(**self.data)
+        qry = fcn(**self.data)
 
-            if 'limit' in self.data.keys():
-                qry += f'\nLIMIT {self.data["limit"]}'
+        if 'limit' in self.data.keys():
+            qry += f'\nLIMIT {self.data["limit"]}'
 
-            if verbose:
-                print(qry)
+        if verbose:
+            print(qry)
 
-            # get 500k rows at a time, yield sets of rows for each unique MMSI
-            mmsi_rows: list = []
-            dt = datetime.now()
-            _ = cur.execute(qry)
-            res: list = cur.fetchmany(10**5)
-            delta = datetime.now() - dt
+        # get 500k rows at a time, yield sets of rows for each unique MMSI
+        mmsi_rows: list = []
+        dt = datetime.now()
+        _ = cur.execute(qry)
+        res: list = cur.fetchmany(10**5)
+        delta = datetime.now() - dt
 
-            if verbose:
-                print(
-                    f'query time: {delta.total_seconds():.2f}s\nfetching rows...'
-                )
-            if res == []:
-                # raise SyntaxError(f'no results for query!\n{qry}')
-                warnings.warn('No results for query!')
+        if verbose:
+            print(
+                f'query time: {delta.total_seconds():.2f}s\nfetching rows...')
+        if res == []:
+            # raise SyntaxError(f'no results for query!\n{qry}')
+            warnings.warn('No results for query!')
 
-            while len(res) > 0:
-                mmsi_rows += res
-                mmsi_rowvals = np.array([r['mmsi'] for r in mmsi_rows])
-                ummsi_idx = np.where(
-                    mmsi_rowvals[:-1] != mmsi_rowvals[1:])[0] + 1
-                ummsi_idx = reduce(np.append,
-                                   ([0], ummsi_idx, [len(mmsi_rows)]))
-                for i in range(len(ummsi_idx) - 2):
-                    yield mmsi_rows[ummsi_idx[i]:ummsi_idx[i + 1]]
-                if len(ummsi_idx) > 2:
-                    mmsi_rows = mmsi_rows[ummsi_idx[i + 1]:]
+        while len(res) > 0:
+            mmsi_rows += res
+            mmsi_rowvals = np.array([r['mmsi'] for r in mmsi_rows])
+            ummsi_idx = np.where(mmsi_rowvals[:-1] != mmsi_rowvals[1:])[0] + 1
+            ummsi_idx = reduce(np.append, ([0], ummsi_idx, [len(mmsi_rows)]))
+            for i in range(len(ummsi_idx) - 2):
+                yield mmsi_rows[ummsi_idx[i]:ummsi_idx[i + 1]]
+            if len(ummsi_idx) > 2:
+                mmsi_rows = mmsi_rows[ummsi_idx[i + 1]:]
 
-                res = cur.fetchmany(10**5)
-            yield mmsi_rows
+            res = cur.fetchmany(10**5)
+        yield mmsi_rows
