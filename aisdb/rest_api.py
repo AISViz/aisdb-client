@@ -18,7 +18,6 @@ from flask import (
     Flask,
     Markup,
     Response,
-    flash,
     request,
 )
 
@@ -56,6 +55,8 @@ with PostgresDBConn(**db_args) as dbconn:
 @app.route('/', methods=['GET', 'POST'])
 def download():
     http_qry = dict(request.args)
+    print(f'received request {http_qry} from client {request.remote_addr}')
+
     example_GET_qry = '<div id="base_uri" style="display: inline;" ></div>?' + '&'.join(
         f'{k}={v}' for k, v in default_query.items())
 
@@ -126,21 +127,26 @@ def download():
 
         dbqry = DBQuery(dbconn=dbconn,
                         callback=aisdb.sqlfcn_callbacks.in_bbox_time_validmmsi,
-                        **http_qry).gen_qry(verbose=False)
+                        **http_qry).gen_qry(
+                            fcn=aisdb.sqlfcn.crawl_dynamic_static,
+                            verbose=False)
 
         tracks = aisdb.TrackGen(dbqry, decimate=0.0001)
-        #tracks = aisdb.TrackGen(dbqry, decimate=False)
+        #csv_rows = aisdb.proc_util.tracks_csv(tracks)
+        '''
+        def generate(csv_rows):
+            start_qry = next(csv_rows)
+            yield ','.join(map(str, start_qry)) + '\n'
+            yield ','.join(map(str, start_qry)) + '\n'
+            for row in csv_rows:
+                yield ','.join(map(str, row)) + '\n'
 
-        flash(Markup('<p>Querying database...</p>'))
-
-        try:
-            aisdb.write_csv(tracks, buf)
-            buf.flush()
-        except aisdb.track_gen.EmptyRowsException:
-            buf.close()
-            return Markup("No results found for query")
-        except Exception as err:
-            raise err
+        lines = generate(csv_rows)
+        # start query generation so that the DBConn object isnt garbage collected
+        _ = next(lines)
+        '''
+        lines = aisdb.proc_util.write_csv(tracks, buf)
+        buf.flush()
 
         download_name = f'ais_{http_qry["start"].date()}_{http_qry["end"].date()}.csv'
         buf.seek(0)
@@ -150,6 +156,7 @@ def download():
         buf.seek(0)
         return Response(
             gzip.compress(buf.read(), compresslevel=9),
+            #gzip.compress(lines, compresslevel=7),
             mimetype='application/csv',
             headers={
                 'Content-Disposition': f'attachment;filename={download_name}',
@@ -157,6 +164,13 @@ def download():
                 'Keep-Alive': 'timeout=0'
             },
         )
+        try:
+            pass
+        except aisdb.track_gen.EmptyRowsException:
+            buf.close()
+            return Markup("No results found for query")
+        except Exception as err:
+            raise err
 
 
 if __name__ == '__main__':
