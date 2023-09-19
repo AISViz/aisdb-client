@@ -79,6 +79,10 @@ def _yieldsegments(rows, staticcols, dynamiccols, decimate=0.0001):
         yield segment
 
 
+class EmptyRowsException(Exception):
+    pass
+
+
 def TrackGen(rowgen: iter, decimate: False) -> dict:
     ''' generator converting sets of rows sorted by MMSI to a
         dictionary containing track column vectors.
@@ -124,7 +128,8 @@ def TrackGen(rowgen: iter, decimate: False) -> dict:
     firstrow = True
     assert isinstance(rowgen, types.GeneratorType)
     for rows in rowgen:
-        assert not (rows is None or len(rows) == 0), 'rows cannot be empty'
+        if (rows is None or len(rows) == 0):
+            raise EmptyRowsException('rows cannot be empty')
         assert isinstance(
             rows[0], (sqlite3.Row, dict)), f'unknown row type: {type(rows[0])}'
         if firstrow:
