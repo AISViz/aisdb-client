@@ -61,10 +61,11 @@ class DBQuery(UserDict):
         ...     decode_msgs(filepaths=filepaths, dbconn=dbconn, source='TESTING', verbose=False)
         ...     q = DBQuery(dbconn=dbconn, callback=in_timerange_validmmsi, start=start, end=end)
         ...     for rows in q.gen_qry():
-        ...         print(str(dict(rows[0])))
+        ...         assert dict(rows[0]) == {'mmsi': 204242000, 'time': 1625176725,
+        ...                                  'longitude': -8.93166666667, 'latitude': 41.45,
+        ...                                  'sog': 4.0, 'cog': 176.0}
         ...         break
-        {'mmsi': 204242000, 'time': 1625176725, 'longitude': -8.93166666667, 'latitude': 41.45, 'sog': 4.0, 'cog': 176.0}
-    '''
+            '''
 
     #        dbpath (string)
     #            database filepath to connect to

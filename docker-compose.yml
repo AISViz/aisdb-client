@@ -60,11 +60,14 @@ services:
       dockerfile: ./docker/python_build.Dockerfile
     working_dir: /aisdb_src
     container_name: python-test
+    init: true
+    stop_grace_period: 30s
     environment:
       - RUST_BACKTRACE=1
       - AISDBDATADIR=/aisdb_src/ais/
       #- AISDBMARINETRAFFIC=/aisdb_src/testdata/marinetraffic_test.db
       #- AISDBTESTDIR=/aisdb_src/testdata/
+      - PYTHONUNBUFFERED=1
     volumes:
       - ${AISDBDATADIR:-$HOME/ais}:/aisdb_src/ais/
       - /tmp/aisdb-python-test:/tmp

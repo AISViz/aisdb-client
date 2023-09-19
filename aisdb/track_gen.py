@@ -103,6 +103,7 @@ def TrackGen(rowgen: iter, decimate: False) -> dict:
             scalar values
 
         >>> import os
+        >>> import numpy as np
         >>> from datetime import datetime
         >>> from aisdb import SQLiteDBConn, DBQuery, TrackGen, decode_msgs
         >>> from aisdb.database import sqlfcn_callbacks
@@ -118,9 +119,11 @@ def TrackGen(rowgen: iter, decimate: False) -> dict:
         ...                 end=datetime(2021, 7, 7))
         ...     rowgen = q.gen_qry()
         ...     for track in TrackGen(rowgen, decimate=True):
-        ...         print(track['mmsi'], track['lon'], track['lat'], track['time'])
+        ...         result = (track['mmsi'], track['lon'], track['lat'], track['time'])
+        ...         assert result == (204242000, np.array([-8.931666], dtype=np.float32),
+        ...                           np.array([41.45], dtype=np.float32), np.array([1625176725], dtype=np.uint32))
         ...         break
-        204242000 [-8.931666] [41.45] [1625176725]
+
     '''
     '''
         >>> os.remove(dbpath)

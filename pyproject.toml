@@ -36,4 +36,4 @@ compatability = "manylinux2014"
 
 [tool.pytest.ini_options]
 testpaths = [ "aisdb/tests",]
-addopts = "--color=yes --tb=native --cov-report term --cov-report html:docs/dist_coverage --cov=aisdb --doctest-modules --envfile .env"
+addopts = "--color=yes --cov-report term --cov-report html:docs/dist_coverage --cov=aisdb --doctest-modules --envfile .env"
