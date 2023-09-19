@@ -4,7 +4,7 @@ pub use std::{
     time::{Duration, Instant},
 };
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, TimeZone, Utc};
 use csv::StringRecord;
 use nmea_parser::ais::{
     AisClass, CargoType, NavigationStatus, ShipType, Station, VesselDynamicData, VesselStaticData,
@@ -28,7 +28,7 @@ pub fn csvdt_2_epoch(dt: &str) -> i64 {
     if let Err(e) = utctime {
         panic!("parsing timestamp from '{}': {}", dt, e);
     }
-    DateTime::<Utc>::from_utc(utctime.unwrap(), Utc).timestamp()
+    Utc.from_utc_datetime(&utctime.unwrap()).timestamp()
 }
 
 /// filter everything but vessel data, sort vessel data into static and dynamic vectors
