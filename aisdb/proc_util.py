@@ -156,7 +156,7 @@ def tracks_csv(tracks, skipcols: list = ['label', 'in_zone']):
 
 def write_csv(
     tracks,
-    fpath: io.BytesIO | str | SpooledTemporaryFile,
+    fpath: typing.Union[io.BytesIO, str, SpooledTemporaryFile],
     skipcols: list = ['label', 'in_zone'],
 ):
     ''' write track vector dictionaries as CSV file
