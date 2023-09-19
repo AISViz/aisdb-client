@@ -307,6 +307,8 @@ pub fn simplify_linestring_idx(x: Vec<f32>, y: Vec<f32>, precision: f32) -> Vec<
     line.into_iter().collect::<Vec<usize>>()
 }
 
+/// This function is used internally by :func:`aisdb.denoising_encoder.encode_score`.
+///
 /// Assigns a score for likelihood of two points being part of a sequential
 /// vessel trajectory. A hard cutoff will be applied at distance_threshold,
 /// after which all scores will be set to -1.

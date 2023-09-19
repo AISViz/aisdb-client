@@ -151,7 +151,7 @@ def encode_greatcircledistance(
     speed_threshold=50,
     minscore=1e-6,
 ):
-    ''' partitions tracks where delta speeds exceed speed_threshold or
+    ''' Partitions tracks where delta speeds exceed speed_threshold or
         delta_meters exceeds distance_threshold.
         concatenates track segments with the highest likelihood of being
         sequential, as encoded by the encode_score function
@@ -162,10 +162,16 @@ def encode_greatcircledistance(
             distance_threshold (int)
                 distance in meters that will be used as a
                 speed score numerator
-            time_threshold (datetime.timedelta)
+            speed_threshold (float)
+                maximum speed in knots that should be considered a continuous
+                trajectory
             minscore (float)
                 minimum score threshold at which to allow track
-                segments to be linked
+                segments to be linked. Value range: (0, 1).
+                A minscore closer to 0 will be less restrictive towards
+                trajectory grouping. A reasonable value for this is 1e-6.
+                This score is computed by the function
+                :func:`aisdb.denoising_encoder.encode_score`
 
         >>> import os
         >>> from datetime import datetime, timedelta
