@@ -33,12 +33,11 @@ def random_noise(tracks, boundary=default_boundary):
         yield track
 
 
-with DBConn() as dbconn:
+with DBConn(dbpath) as dbconn:
     vinfoDB = aisdb.webdata.marinetraffic.VesselInfo(trafficDBpath).trafficDB
 
     qry = DBQuery(
         dbconn=dbconn,
-        dbpath=dbpath,
         start=start,
         end=end,
         callback=aisdb.database.sqlfcn_callbacks.in_bbox_time_validmmsi,
